@@ -1,0 +1,5 @@
+/target
+**/*.rs.bk
+messages.html
+text
+*.sw[op]
