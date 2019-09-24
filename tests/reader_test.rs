@@ -9,5 +9,5 @@ macro_rules! fixture {
 #[test]
 fn it_cleans_up_user_mentions() {
     let body = fold_html(fixture!("messages.html"), String::new(), |_, m| m.body).unwrap();
-    assert_eq!("Ummm, [id2342343|Denko], I’m drinking jasmine tea right now, thinking about what to have for dinner (´･ω･`)", body);
+    assert_eq!("Hi Denko, I’m drinking jasmine tea right now, thinking about what to have for dinner (´･ω･`)", body);
 }
