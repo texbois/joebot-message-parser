@@ -83,17 +83,20 @@ fn parse_message(node: Handle) -> Message {
                 let full_name =
                     if let NodeData::Text { ref contents } = inner[1].children.borrow()[0].data {
                         contents.borrow().to_string()
-                    } else {
+                    }
+                    else {
                         panic!("Expected the 2nd .from child to contain a text node");
                     };
 
                 let screen_name =
                     if let NodeData::Text { ref contents } = inner[3].children.borrow()[0].data {
                         contents.borrow()[1..].to_string()
-                    } else {
+                    }
+                    else {
                         panic!("Expected the 4th .from child to contain a text node")
                     };
-            } else if class_attr_eq(&attrs.borrow(), "msg_body") {
+            }
+            else if class_attr_eq(&attrs.borrow(), "msg_body") {
                 for body_child in child.children.borrow().iter() {
                     match body_child.data {
                         NodeData::Text { ref contents } => {
@@ -104,11 +107,12 @@ fn parse_message(node: Handle) -> Message {
                             ref attrs,
                             ..
                         } => {
-                            if name.local == local_name!("div")
-                                && class_attr_eq(&attrs.borrow(), "emoji")
+                            if name.local == local_name!("div") &&
+                                class_attr_eq(&attrs.borrow(), "emoji")
                             {
                                 body += &attr_value(&attrs.borrow(), local_name!("alt")).unwrap();
-                            } else if name.local == local_name!("br") {
+                            }
+                            else if name.local == local_name!("br") {
                                 body += "\n";
                             }
                         }

@@ -2,7 +2,9 @@ use joebot_message_parser::reader::fold_html;
 
 macro_rules! fixture {
     ($name: expr) => {
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures").join($name)
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures")
+            .join($name)
     };
 }
 
