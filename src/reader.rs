@@ -17,10 +17,15 @@ pub enum MessageEvent<'a> {
     BodyExtracted(String),
 }
 
+pub enum EventResult<A> {
+    Consumed(A),
+    SkipMessage(A),
+}
+
 pub fn fold_html<P, A, F>(path: P, init: A, mut reducer: F) -> quick_xml::Result<A>
 where
     P: AsRef<Path>,
-    F: for<'e> FnMut(A, MessageEvent<'e>) -> A,
+    F: for<'e> FnMut(A, MessageEvent<'e>) -> EventResult<A>,
 {
     let mut reader = Reader::from_file(path)?;
     reader.check_end_names(false);
@@ -49,10 +54,25 @@ enum ParseState {
     MessageAttachmentsStart,
 }
 
+macro_rules! raise_event_and_advance_state {
+    ($reducer: expr, $acc: ident, $state:ident, $event: expr, $next_state: expr) => {
+        match $reducer($acc, $event) {
+            EventResult::Consumed(next_acc) => {
+                $acc = next_acc;
+                $state = $next_state;
+            }
+            EventResult::SkipMessage(next_acc) => {
+                $acc = next_acc;
+                $state = ParseState::NoMessage;
+            }
+        }
+    };
+}
+
 fn fold_with_reader<B, A, F>(mut reader: Reader<B>, init: A, mut reducer: F) -> quick_xml::Result<A>
 where
     B: std::io::BufRead,
-    F: for<'e> FnMut(A, MessageEvent<'e>) -> A,
+    F: for<'e> FnMut(A, MessageEvent<'e>) -> EventResult<A>,
 {
     let mut buf = Vec::new();
     let mut state = ParseState::Prelude;
@@ -67,8 +87,13 @@ where
                     ParseState::NoMessage | ParseState::MessageBodyExtracted
                         if e.name() == b"div" && class_eq(&mut e.attributes(), b"msg_item") =>
                     {
-                        acc = reducer(acc, MessageEvent::Start);
-                        state = ParseState::MessageStart
+                        raise_event_and_advance_state!(
+                            reducer,
+                            acc,
+                            state,
+                            MessageEvent::Start,
+                            ParseState::MessageStart
+                        );
                     }
                     ParseState::MessageStart if e.name() == b"b" => {
                         state = ParseState::MessageFullNameStart
@@ -102,18 +127,33 @@ where
             Ok(Event::Text(e)) => match state {
                 ParseState::MessageFullNameStart => {
                     let full_name = reader.decode(e.escaped())?;
-                    acc = reducer(acc, MessageEvent::FullNameExtracted(full_name));
-                    state = ParseState::MessageFullNameExtracted;
+                    raise_event_and_advance_state!(
+                        reducer,
+                        acc,
+                        state,
+                        MessageEvent::FullNameExtracted(full_name),
+                        ParseState::MessageFullNameExtracted
+                    );
                 }
                 ParseState::MessageShortNameStart => {
                     let short_name = reader.decode(e.escaped())?;
-                    acc = reducer(acc, MessageEvent::ShortNameExtracted(short_name));
-                    state = ParseState::MessageShortNameExtracted;
+                    raise_event_and_advance_state!(
+                        reducer,
+                        acc,
+                        state,
+                        MessageEvent::ShortNameExtracted(short_name),
+                        ParseState::MessageShortNameExtracted
+                    );
                 }
                 ParseState::MessageDateStart => {
                     let date = reader.decode(e.escaped())?;
-                    acc = reducer(acc, MessageEvent::DateExtracted(date));
-                    state = ParseState::MessageDateExtracted;
+                    raise_event_and_advance_state!(
+                        reducer,
+                        acc,
+                        state,
+                        MessageEvent::DateExtracted(date),
+                        ParseState::MessageDateExtracted
+                    );
                 }
                 ParseState::MessageBodyStart(ref mut body) => {
                     body.push_str(reader.decode(e.escaped())?)
@@ -128,8 +168,13 @@ where
             },
             Ok(Event::End(ref e)) => match state {
                 ParseState::MessageBodyStart(body) if e.name() == b"div" => {
-                    acc = reducer(acc, MessageEvent::BodyExtracted(body));
-                    state = ParseState::MessageBodyExtracted;
+                    raise_event_and_advance_state!(
+                        reducer,
+                        acc,
+                        state,
+                        MessageEvent::BodyExtracted(body),
+                        ParseState::MessageBodyExtracted
+                    );
                 }
                 ParseState::MessageAttachmentsStart if e.name() == b"div" => {
                     state = ParseState::NoMessage;

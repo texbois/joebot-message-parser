@@ -1,4 +1,4 @@
-use joebot_message_parser::reader::{fold_html, MessageEvent};
+use joebot_message_parser::reader::{fold_html, MessageEvent, EventResult};
 
 macro_rules! fixture {
     ($name: expr) => {
@@ -27,25 +27,25 @@ where P: AsRef<std::path::Path> {
             match event {
                 MessageEvent::Start => {
                     msgid += 1;
-                    msg
+                    EventResult::Consumed(msg)
                 }
                 MessageEvent::FullNameExtracted(full_name) if msgid == id => {
                     msg.full_name.push_str(full_name);
-                    msg
+                    EventResult::Consumed(msg)
                 }
                 MessageEvent::ShortNameExtracted(short_name) if msgid == id => {
                     msg.short_name.push_str(short_name);
-                    msg
+                    EventResult::Consumed(msg)
                 }
                 MessageEvent::DateExtracted(date) if msgid == id => {
                     msg.date.push_str(date);
-                    msg
+                    EventResult::Consumed(msg)
                 }
                 MessageEvent::BodyExtracted(body) if msgid == id => {
                     msg.body = body;
-                    msg
+                    EventResult::Consumed(msg)
                 }
-                _ => msg,
+                _ => EventResult::Consumed(msg),
             }
         },
     )

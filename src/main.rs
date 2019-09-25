@@ -1,4 +1,4 @@
-use joebot_message_parser::reader::{fold_html, MessageEvent};
+use joebot_message_parser::reader::{fold_html, EventResult, MessageEvent};
 
 fn main() {
     let text = fold_html(
@@ -8,10 +8,10 @@ fn main() {
             MessageEvent::BodyExtracted(body) if !body.is_empty() => {
                 acc += &body;
                 acc += "\n";
-                acc
-            },
-            _ => acc
-        }
+                EventResult::Consumed(acc)
+            }
+            _ => EventResult::Consumed(acc),
+        },
     )
     .unwrap();
     std::fs::write("text", text).unwrap();
