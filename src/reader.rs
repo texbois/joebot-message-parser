@@ -32,7 +32,7 @@ where
 
     fold_with_reader(reader, init, |acc, event| match event {
         MessageEvent::BodyExtracted(mut body) if !body.is_empty() => {
-            body = USER_MENTION_RE.replace_all(&body, "$name").to_string();
+            body = USER_MENTION_RE.replace_all(&body, "$name").into_owned();
             reducer(acc, MessageEvent::BodyExtracted(body))
         }
         _ => reducer(acc, event),
@@ -191,14 +191,14 @@ where
 }
 
 fn class_eq(attrs: &mut Attributes, cmp: &[u8]) -> bool {
-    attrs.any(|ar| match ar {
+    attrs.with_checks(false).any(|ar| match ar {
         Ok(a) => a.key == b"class" && a.value.as_ref() == cmp,
         _ => false,
     })
 }
 
 fn get_attr<'a>(attrs: &'a mut Attributes, key: &[u8]) -> Option<Cow<'a, [u8]>> {
-    attrs.find_map(|ar| match ar {
+    attrs.with_checks(false).find_map(|ar| match ar {
         Ok(a) if a.key == key => Some(a.value),
         _ => None,
     })
