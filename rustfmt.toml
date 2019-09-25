@@ -1,4 +1,6 @@
 binop_separator = "Back"
 control_brace_style = "ClosingNextLine"
 imports_indent = "Visual"
+overflow_delimited_expr = true
 use_field_init_shorthand = true
+where_single_line = true

@@ -1,7 +1,5 @@
-use html5ever::rcdom::{Handle, NodeData, RcDom};
-use html5ever::tendril::TendrilSink;
-use html5ever::tree_builder::TreeBuilderOpts;
-use html5ever::{local_name, parse_document, ParseOpts};
+use quick_xml::events::Event;
+use quick_xml::Reader;
 use regex::Regex;
 use std::path::Path;
 
@@ -11,135 +9,160 @@ lazy_static! {
 
 pub struct Message {
     pub body: String,
+    pub full_name: String,
+    pub short_name: String,
+    pub date: String,
 }
 
-pub fn fold_html<P, A, F>(path: P, init: A, mut reducer: F) -> std::io::Result<A>
+enum ParseState {
+    Prelude,
+    NoMessage,
+    MessageStart,
+    MessageFullNameStart,
+    MessageFullNameExtracted {
+        full_name: String,
+    },
+    MessageShortNameStart {
+        full_name: String,
+    },
+    MessageShortNameExtracted {
+        full_name: String,
+        short_name: String,
+    },
+    MessageDateStart {
+        full_name: String,
+        short_name: String,
+    },
+    MessageDateExtracted {
+        full_name: String,
+        short_name: String,
+        date: String,
+    },
+    MessageBody {
+        full_name: String,
+        short_name: String,
+        date: String,
+        body: String,
+    },
+}
+
+fn class_eq(attrs: &mut quick_xml::events::attributes::Attributes, cmp: &[u8]) -> bool {
+    attrs.any(|ar| match ar {
+        Ok(a) => a.key == b"class" && a.value.as_ref() == cmp,
+        _ => false,
+    })
+}
+
+pub fn fold_html<P, A, F>(path: P, init: A, mut reducer: F) -> quick_xml::Result<A>
 where
     P: AsRef<Path>,
     F: FnMut(A, Message) -> A,
 {
-    let opts = ParseOpts {
-        tree_builder: TreeBuilderOpts {
-            drop_doctype: true,
-            ..Default::default()
-        },
-        ..Default::default()
-    };
-    let dom = parse_document(RcDom::default(), opts)
-        .from_utf8()
-        .from_file(path)?;
-    let acc = fold_messages(dom.document, init, &mut reducer);
-    Ok(acc)
-}
+    let mut reader = Reader::from_file(path)?;
+    reader.check_end_names(false);
 
-fn fold_messages<A, F>(node: Handle, init: A, reducer: &mut F) -> A
-where
-    F: FnMut(A, Message) -> A,
-{
-    if let NodeData::Element {
-        ref name,
-        ref attrs,
-        ..
-    } = node.data
-    {
-        if name.local == local_name!("div") && class_attr_eq(&attrs.borrow(), "msg_item") {
-            let message = parse_message(node);
-            return reducer(init, message);
-        }
-        if name.local == local_name!("head") {
-            return init;
-        }
-    }
+    let mut buf = Vec::new();
+    let mut state = ParseState::Prelude;
 
     let mut acc = init;
-    for child in node.children.borrow().iter() {
-        acc = fold_messages(child.clone(), acc, reducer);
-    }
 
-    acc
-}
-
-fn parse_message(node: Handle) -> Message {
-    let mut body = String::new();
-
-    for child in node.children.borrow().iter() {
-        if let NodeData::Element {
-            ref name,
-            ref attrs,
-            ..
-        } = child.data
-        {
-            if name.local != local_name!("div") {
-                continue;
-            }
-            if class_attr_eq(&attrs.borrow(), "from") {
-                let inner = child.children.borrow();
-                assert!(
-                    inner.len() == 6,
-                    "expected .from to have 6 child nodes, got {}",
-                    inner.len()
-                );
-
-                let full_name =
-                    if let NodeData::Text { ref contents } = inner[1].children.borrow()[0].data {
-                        contents.borrow().to_string()
+    loop {
+        match reader.read_event(&mut buf) {
+            Ok(Event::Start(ref e)) => {
+                match state {
+                    // There's an <hr> tag right before the first msg_item
+                    ParseState::Prelude if e.name() == b"hr" => state = ParseState::NoMessage,
+                    ParseState::NoMessage
+                        if e.name() == b"div" && class_eq(&mut e.attributes(), b"msg_item") =>
+                    {
+                        state = ParseState::MessageStart
                     }
-                    else {
-                        panic!("Expected the 2nd .from child to contain a text node");
-                    };
-
-                let screen_name =
-                    if let NodeData::Text { ref contents } = inner[3].children.borrow()[0].data {
-                        contents.borrow()[1..].to_string()
+                    ParseState::MessageStart if e.name() == b"b" => {
+                        state = ParseState::MessageFullNameStart;
                     }
-                    else {
-                        panic!("Expected the 4th .from child to contain a text node")
-                    };
-            }
-            else if class_attr_eq(&attrs.borrow(), "msg_body") {
-                for body_child in child.children.borrow().iter() {
-                    match body_child.data {
-                        NodeData::Text { ref contents } => {
-                            body += &contents.borrow();
+                    ParseState::MessageFullNameExtracted { full_name } if e.name() == b"a" => {
+                        state = ParseState::MessageShortNameStart { full_name };
+                    }
+                    ParseState::MessageShortNameExtracted {
+                        full_name,
+                        short_name,
+                    } if e.name() == b"a" => {
+                        state = ParseState::MessageDateStart {
+                            full_name,
+                            short_name,
+                        };
+                    }
+                    ParseState::MessageDateExtracted {
+                        full_name,
+                        short_name,
+                        date,
+                    } if e.name() == b"div" => {
+                        state = ParseState::MessageBody {
+                            full_name,
+                            short_name,
+                            date,
+                            body: String::new(),
                         }
-                        NodeData::Element {
-                            ref name,
-                            ref attrs,
-                            ..
-                        } => {
-                            if name.local == local_name!("div") &&
-                                class_attr_eq(&attrs.borrow(), "emoji")
-                            {
-                                body += &attr_value(&attrs.borrow(), local_name!("alt")).unwrap();
-                            }
-                            else if name.local == local_name!("br") {
-                                body += "\n";
-                            }
-                        }
-                        _ => (),
                     }
+                    _ => {}
+                };
+            }
+            Ok(Event::Text(e)) => match state {
+                ParseState::MessageFullNameStart => {
+                    let full_name = reader.decode(e.escaped())?.to_owned();
+                    state = ParseState::MessageFullNameExtracted { full_name };
                 }
-            }
+                ParseState::MessageShortNameStart { full_name } => {
+                    let short_name = reader.decode(e.escaped())?.to_owned();
+                    state = ParseState::MessageShortNameExtracted {
+                        full_name,
+                        short_name,
+                    };
+                }
+                ParseState::MessageDateStart {
+                    full_name,
+                    short_name,
+                } => {
+                    let date = reader.decode(e.escaped())?.to_owned();
+                    state = ParseState::MessageDateExtracted {
+                        full_name,
+                        short_name,
+                        date,
+                    };
+                }
+                ParseState::MessageBody { ref mut body, .. } => {
+                    body.push_str(reader.decode(e.escaped())?);
+                }
+                _ => (),
+            },
+            Ok(Event::Empty(ref e)) => match state {
+                ParseState::MessageBody { ref mut body, .. } if e.name() == b"br" => {
+                    body.push_str("\n")
+                }
+                _ => (),
+            },
+            Ok(Event::End(ref e)) => match state {
+                ParseState::MessageBody {
+                    full_name,
+                    short_name,
+                    date,
+                    body,
+                } if e.name() == b"div" => {
+                    acc = reducer(acc, Message {
+                        full_name,
+                        short_name,
+                        date,
+                        body: USER_MENTION_RE.replace_all(&body, "$name").to_string(),
+                    });
+                    state = ParseState::NoMessage
+                }
+                _ => (),
+            },
+            Err(e) => panic!("Error at position {}: {:?}", reader.buffer_position(), e),
+            Ok(Event::Eof) => break,
+            _ => (),
         }
+        buf.clear();
     }
-
-    body = USER_MENTION_RE.replace_all(&body, "$name").to_string();
-
-    Message { body }
-}
-
-fn class_attr_eq(attrs: &Vec<html5ever::Attribute>, value: &str) -> bool {
-    attrs
-        .iter()
-        .any(|a| a.name.local == local_name!("class") && *a.value == *value)
-}
-
-fn attr_value(
-    attrs: &Vec<html5ever::Attribute>,
-    name: html5ever::LocalName,
-) -> Option<&tendril::StrTendril> {
-    attrs
-        .iter()
-        .find(|a| a.name.local == name)
-        .map(|a| &a.value)
+    Ok(acc)
 }
