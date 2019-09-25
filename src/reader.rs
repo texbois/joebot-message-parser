@@ -32,7 +32,9 @@ where
 
     fold_with_reader(reader, init, |acc, event| match event {
         MessageEvent::BodyExtracted(mut body) if !body.is_empty() => {
-            body = USER_MENTION_RE.replace_all(&body, "$name").into_owned();
+            if body.contains('[') {
+                body = USER_MENTION_RE.replace_all(&body, "$name").into_owned();
+            }
             reducer(acc, MessageEvent::BodyExtracted(body))
         }
         _ => reducer(acc, event),
