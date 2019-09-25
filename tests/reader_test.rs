@@ -56,7 +56,7 @@ where P: AsRef<std::path::Path> {
 fn it_parses_messages_user_mentions() {
     let msg = msgid_body(0, fixture!("messages.html"));
     assert_eq!("Sota", msg.full_name);
-    assert_eq!("@sota", msg.short_name);
+    assert_eq!("sota", msg.short_name);
     assert_eq!("2018.01.21 11:05:13", msg.date);
     assert_eq!(
         "Hi Denko\n\nI’m drinking jasmine tea right now, thinking about what to have for dinner (´･ω･`)",

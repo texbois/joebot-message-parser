@@ -141,7 +141,7 @@ where
                         reducer,
                         acc,
                         state,
-                        MessageEvent::ShortNameExtracted(short_name),
+                        MessageEvent::ShortNameExtracted(&short_name[1..]), // skip the leading @
                         ParseState::MessageShortNameExtracted
                     );
                 }

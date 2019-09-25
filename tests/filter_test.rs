@@ -47,6 +47,25 @@ fn it_filters_by_min_date() {
     }
 }
 
+#[test]
+fn it_filters_by_short_name() {
+    let mut blacklist = std::collections::BTreeSet::new();
+    blacklist.insert("sota".to_owned());
+    let filter = Filter {
+        short_name_blacklist: Some(blacklist),
+        ..Default::default()
+    };
+    let matched = matches(fixture!("messages.html"), filter);
+    for id in [0, 2, 3].into_iter() {
+        assert!(matched[id].contains(&"FullNameExtracted"));
+        assert_eq!(matched[id].len(), 1);
+    }
+    assert!(matched[&1].contains(&"FullNameExtracted"));
+    assert!(matched[&1].contains(&"ShortNameExtracted"));
+    assert!(matched[&1].contains(&"DateExtracted"));
+    assert!(matched[&1].contains(&"BodyExtracted"));
+}
+
 fn matches<P>(path: P, filter: Filter) -> HashMap<i32, Vec<&'static str>>
 where P: AsRef<std::path::Path> {
     let mut msgid = -1;
