@@ -8,18 +8,24 @@ macro_rules! fixture {
     };
 }
 
-#[test]
-fn it_parses_user_mentions() {
-    let body = fold_html(fixture!("messages.html"), String::new(), |acc, m| {
-        // Grab the first message
-        if acc.is_empty() {
+fn msgid_body<P>(id: i32, path: P) -> String
+where P: AsRef<std::path::Path> {
+    let mut msgid = -1;
+    fold_html(fixture!(path), String::new(), |acc, m| {
+        msgid += 1;
+        if msgid == id {
             m.body
         }
         else {
             acc
         }
     })
-    .unwrap();
+    .unwrap()
+}
+
+#[test]
+fn it_parses_messages_user_mentions() {
+    let body = msgid_body(0, fixture!("messages.html"));
     assert_eq!(
         "Hi Denko\n\nI’m drinking jasmine tea right now, thinking about what to have for dinner (´･ω･`)",
         body
@@ -28,11 +34,14 @@ fn it_parses_user_mentions() {
 
 #[test]
 fn it_parses_emoji() {
-    let body = fold_html(
-        fixture!("messages.html"),
-        String::new(),
-        |_, m| /* last message */ m.body,
-    )
-    .unwrap();
+    let body = msgid_body(1, fixture!("messages.html"));
     assert_eq!("🤔🤔🤔", body);
+}
+
+#[test]
+fn it_parses_attachments_without_body() {
+    let empty_body = msgid_body(2, fixture!("messages.html"));
+    assert_eq!("", empty_body);
+    let next_message = msgid_body(3, fixture!("messages.html"));
+    assert_eq!("W-what do you think? I hope you like it (´･ω･`)", next_message);
 }
