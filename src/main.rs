@@ -1,16 +1,17 @@
-use joebot_message_parser::reader;
+use joebot_message_parser::reader::{fold_html, MessageEvent};
 
 fn main() {
-    let text = reader::fold_html(
+    let text = fold_html(
         "messages.html",
         String::new(),
-        |mut acc, msg: reader::Message| {
-            if !msg.body.is_empty() {
-                acc += &msg.body;
+        |mut acc, event| match event {
+            MessageEvent::BodyExtracted(body) if !body.is_empty() => {
+                acc += &body;
                 acc += "\n";
-            }
-            acc
-        },
+                acc
+            },
+            _ => acc
+        }
     )
     .unwrap();
     std::fs::write("text", text).unwrap();

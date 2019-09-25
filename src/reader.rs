@@ -8,28 +8,29 @@ lazy_static! {
     static ref USER_MENTION_RE: Regex = Regex::new(r"\[id\d+\|(?P<name>[^\]]+)\]").unwrap();
 }
 
-pub struct Message {
-    pub body: String,
-    pub full_name: String,
-    pub short_name: String,
-    pub date: String,
+#[derive(Debug)]
+pub enum MessageEvent<'a> {
+    Start,
+    FullNameExtracted(&'a str),
+    ShortNameExtracted(&'a str),
+    DateExtracted(&'a str),
+    BodyExtracted(String),
 }
 
 pub fn fold_html<P, A, F>(path: P, init: A, mut reducer: F) -> quick_xml::Result<A>
 where
     P: AsRef<Path>,
-    F: FnMut(A, Message) -> A,
+    F: for<'e> FnMut(A, MessageEvent<'e>) -> A,
 {
     let mut reader = Reader::from_file(path)?;
     reader.check_end_names(false);
 
-    fold_with_reader(reader, init, |acc, mut message| {
-        if !message.body.is_empty() {
-            message.body = USER_MENTION_RE
-                .replace_all(&message.body, "$name")
-                .to_string();
+    fold_with_reader(reader, init, |acc, event| match event {
+        MessageEvent::BodyExtracted(mut body) if !body.is_empty() => {
+            body = USER_MENTION_RE.replace_all(&body, "$name").to_string();
+            reducer(acc, MessageEvent::BodyExtracted(body))
         }
-        reducer(acc, message)
+        _ => reducer(acc, event),
     })
 }
 
@@ -38,38 +39,23 @@ enum ParseState {
     NoMessage,
     MessageStart,
     MessageFullNameStart,
-    MessageFullNameExtracted {
-        full_name: String,
-    },
-    MessageShortNameStart {
-        full_name: String,
-    },
-    MessageShortNameExtracted {
-        full_name: String,
-        short_name: String,
-    },
-    MessageDateStart {
-        full_name: String,
-        short_name: String,
-    },
-    MessageDateExtracted(Message),
-    MessageBody(Message),
-    MessageBodyExtracted(Message),
-    MessageAttachmentsHeader(Message),
-    MessageAttachments {
-        message: Message,
-        div_nesting: u32,
-    },
+    MessageFullNameExtracted,
+    MessageShortNameStart,
+    MessageShortNameExtracted,
+    MessageDateStart,
+    MessageDateExtracted,
+    MessageBodyStart(String),
+    MessageBodyExtracted,
+    MessageAttachmentsStart,
 }
 
 fn fold_with_reader<B, A, F>(mut reader: Reader<B>, init: A, mut reducer: F) -> quick_xml::Result<A>
 where
     B: std::io::BufRead,
-    F: FnMut(A, Message) -> A,
+    F: for<'e> FnMut(A, MessageEvent<'e>) -> A,
 {
     let mut buf = Vec::new();
     let mut state = ParseState::Prelude;
-
     let mut acc = init;
 
     loop {
@@ -78,99 +64,75 @@ where
                 match state {
                     // There's an <hr> tag right before the first msg_item
                     ParseState::Prelude if e.name() == b"hr" => state = ParseState::NoMessage,
-                    ParseState::NoMessage
+                    ParseState::NoMessage | ParseState::MessageBodyExtracted
                         if e.name() == b"div" && class_eq(&mut e.attributes(), b"msg_item") =>
                     {
+                        acc = reducer(acc, MessageEvent::Start);
                         state = ParseState::MessageStart
                     }
                     ParseState::MessageStart if e.name() == b"b" => {
                         state = ParseState::MessageFullNameStart
                     }
-                    ParseState::MessageFullNameExtracted { full_name } if e.name() == b"a" => {
-                        state = ParseState::MessageShortNameStart { full_name }
+                    ParseState::MessageFullNameExtracted if e.name() == b"a" => {
+                        state = ParseState::MessageShortNameStart
                     }
-                    ParseState::MessageShortNameExtracted {
-                        full_name,
-                        short_name,
-                    } if e.name() == b"a" => {
-                        state = ParseState::MessageDateStart {
-                            full_name,
-                            short_name,
-                        }
+                    ParseState::MessageShortNameExtracted if e.name() == b"a" => {
+                        state = ParseState::MessageDateStart
                     }
-                    ParseState::MessageDateExtracted(message)
+                    ParseState::MessageDateExtracted
                         if e.name() == b"div" && class_eq(&mut e.attributes(), b"msg_body") =>
                     {
-                        state = ParseState::MessageBody(message)
+                        state = ParseState::MessageBodyStart(String::new())
                     }
-                    ParseState::MessageBody(Message { ref mut body, .. })
+                    ParseState::MessageBodyStart(ref mut body)
                         if e.name() == b"img" && class_eq(&mut e.attributes(), b"emoji") =>
                     {
                         if let Some(alt) = get_attr(&mut e.attributes(), b"alt") {
                             body.push_str(reader.decode(&alt)?)
                         }
                     }
-                    ParseState::MessageDateExtracted(message) |
-                    ParseState::MessageBodyExtracted(message)
+                    ParseState::MessageDateExtracted | ParseState::MessageBodyExtracted
                         if e.name() == b"div" && class_eq(&mut e.attributes(), b"attacments") =>
                     {
-                        state = ParseState::MessageAttachmentsHeader(message)
+                        state = ParseState::MessageAttachmentsStart
                     }
                     _ => {}
                 };
             }
             Ok(Event::Text(e)) => match state {
                 ParseState::MessageFullNameStart => {
-                    let full_name = reader.decode(e.escaped())?.to_owned();
-                    state = ParseState::MessageFullNameExtracted { full_name };
+                    let full_name = reader.decode(e.escaped())?;
+                    acc = reducer(acc, MessageEvent::FullNameExtracted(full_name));
+                    state = ParseState::MessageFullNameExtracted;
                 }
-                ParseState::MessageShortNameStart { full_name } => {
-                    let short_name = reader.decode(e.escaped())?.to_owned();
-                    state = ParseState::MessageShortNameExtracted {
-                        full_name,
-                        short_name,
-                    };
+                ParseState::MessageShortNameStart => {
+                    let short_name = reader.decode(e.escaped())?;
+                    acc = reducer(acc, MessageEvent::ShortNameExtracted(short_name));
+                    state = ParseState::MessageShortNameExtracted;
                 }
-                ParseState::MessageDateStart {
-                    full_name,
-                    short_name,
-                } => {
-                    let date = reader.decode(e.escaped())?.to_owned();
-                    state = ParseState::MessageDateExtracted(Message {
-                        full_name,
-                        short_name,
-                        date,
-                        body: String::new(),
-                    });
+                ParseState::MessageDateStart => {
+                    let date = reader.decode(e.escaped())?;
+                    acc = reducer(acc, MessageEvent::DateExtracted(date));
+                    state = ParseState::MessageDateExtracted;
                 }
-                ParseState::MessageBody(Message { ref mut body, .. }) => {
-                    body.push_str(reader.decode(e.escaped())?);
+                ParseState::MessageBodyStart(ref mut body) => {
+                    body.push_str(reader.decode(e.escaped())?)
                 }
                 _ => (),
             },
             Ok(Event::Empty(ref e)) => match state {
-                ParseState::MessageBody(Message { ref mut body, .. }) if e.name() == b"br" => {
+                ParseState::MessageBodyStart(ref mut body) if e.name() == b"br" => {
                     body.push_str("\n")
                 }
                 _ => (),
             },
             Ok(Event::End(ref e)) => match state {
-                ParseState::MessageBody(message) if e.name() == b"div" => {
-                    state = ParseState::MessageBodyExtracted(message)
+                ParseState::MessageBodyStart(body) if e.name() == b"div" => {
+                    acc = reducer(acc, MessageEvent::BodyExtracted(body));
+                    state = ParseState::MessageBodyExtracted;
                 }
-                ParseState::MessageAttachmentsHeader(message) if e.name() == b"div" => {
-                    state = ParseState::MessageAttachments {
-                        message,
-                        div_nesting: 0,
-                    }
-                }
-                ParseState::MessageBodyExtracted(message) |
-                ParseState::MessageAttachments {
-                    message,
-                    div_nesting: 0,
-                } if e.name() == b"div" => {
-                    acc = reducer(acc, message);
-                    state = ParseState::NoMessage
+                ParseState::MessageAttachmentsStart if e.name() == b"div" => {
+                    state = ParseState::NoMessage;
                 }
                 _ => (),
             },
