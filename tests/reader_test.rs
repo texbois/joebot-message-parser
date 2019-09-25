@@ -25,3 +25,14 @@ fn it_parses_user_mentions() {
         body
     );
 }
+
+#[test]
+fn it_parses_emoji() {
+    let body = fold_html(
+        fixture!("messages.html"),
+        String::new(),
+        |_, m| /* last message */ m.body,
+    )
+    .unwrap();
+    assert_eq!("🤔🤔🤔", body);
+}

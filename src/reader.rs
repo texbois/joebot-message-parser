@@ -1,6 +1,7 @@
-use quick_xml::events::Event;
+use quick_xml::events::{attributes::Attributes, Event};
 use quick_xml::Reader;
 use regex::Regex;
+use std::borrow::Cow;
 use std::path::Path;
 
 lazy_static! {
@@ -46,10 +47,17 @@ enum ParseState {
     },
 }
 
-fn class_eq(attrs: &mut quick_xml::events::attributes::Attributes, cmp: &[u8]) -> bool {
+fn class_eq(attrs: &mut Attributes, cmp: &[u8]) -> bool {
     attrs.any(|ar| match ar {
         Ok(a) => a.key == b"class" && a.value.as_ref() == cmp,
         _ => false,
+    })
+}
+
+fn get_attr<'a>(attrs: &'a mut Attributes, key: &[u8]) -> Option<Cow<'a, [u8]>> {
+    attrs.find_map(|ar| match ar {
+        Ok(a) if a.key == key => Some(a.value),
+        _ => None,
     })
 }
 
@@ -102,6 +110,13 @@ where
                             short_name,
                             date,
                             body: String::new(),
+                        }
+                    }
+                    ParseState::MessageBody { ref mut body, .. }
+                        if e.name() == b"img" && class_eq(&mut e.attributes(), b"emoji") =>
+                    {
+                        if let Some(alt) = get_attr(&mut e.attributes(), b"alt") {
+                            body.push_str(reader.decode(&alt)?)
                         }
                     }
                     _ => {}
