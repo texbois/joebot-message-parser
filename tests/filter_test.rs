@@ -28,7 +28,7 @@ fn it_filters_by_min_date() {
     let date =
         chrono::NaiveDateTime::parse_from_str("2018.01.22 00:00:00", "%Y.%m.%d %H:%M:%S").unwrap();
     let filter = Filter {
-        min_date: Some(date),
+        since_date: Some(date),
         ..Default::default()
     };
     let matched = matches(fixture!("messages.html"), filter);
@@ -50,7 +50,7 @@ fn it_filters_by_min_date() {
 #[test]
 fn it_filters_by_short_name() {
     let mut blacklist = std::collections::BTreeSet::new();
-    blacklist.insert("sota".to_owned());
+    blacklist.insert("sota");
     let filter = Filter {
         short_name_blacklist: Some(blacklist),
         ..Default::default()

@@ -4,12 +4,11 @@ extern crate clap;
 use chrono::NaiveDateTime;
 use clap::{App, Arg};
 use joebot_message_parser::filter::Filter;
-use joebot_message_parser::reader::{fold_html, EventResult, MessageEvent};
-use std::collections::BTreeSet;
+use joebot_message_parser::writers::{TextWriter, Writer};
 
 arg_enum! {
     #[derive(Debug)]
-    enum Writer { Taki, Text }
+    enum WriterType { Taki, Text }
 }
 
 fn main() {
@@ -20,7 +19,7 @@ fn main() {
                 .required(true)
                 .takes_value(true)
                 .case_insensitive(true)
-                .possible_values(&Writer::variants()),
+                .possible_values(&WriterType::variants()),
             Arg::with_name("ignore-names")
                 .long("ignore-names")
                 .help("Filter: screen names (id...) whose messages are excluded")
@@ -47,13 +46,11 @@ fn main() {
         ])
         .get_matches();
 
-    let writer = value_t!(matches.value_of("writer"), Writer).unwrap_or_else(|e| e.exit());
-    let output_path = matches.value_of("output").unwrap();
-    let inputs = matches.values_of("inputs").unwrap();
+    let writer_type = value_t!(matches.value_of("writer"), WriterType).unwrap_or_else(|e| e.exit());
+    let output = matches.value_of("output").unwrap();
+    let inputs = matches.values_of("inputs").map(|ins| ins.collect()).unwrap();
 
-    let short_name_blacklist = matches
-        .values_of("ignore-names")
-        .map(|ns| ns.map(|n| n.to_owned()).collect::<BTreeSet<String>>());
+    let short_name_blacklist = matches.values_of("ignore-names").map(|ns| ns.collect());
     let since_date = matches
         .value_of("since-date")
         .map(|d| NaiveDateTime::parse_from_str(d, "%Y.%m.%d %H:%M:%S").unwrap());
@@ -62,16 +59,8 @@ fn main() {
         since_date,
     };
 
-    for input in inputs {
-        let text = fold_html(input, String::new(), |mut acc, event| match event {
-            MessageEvent::BodyExtracted(body) if !body.is_empty() => {
-                acc += &body;
-                acc += "\n";
-                EventResult::Consumed(acc)
-            }
-            _ => EventResult::Consumed(acc),
-        })
-        .unwrap();
-        std::fs::write(output_path, text).unwrap();
-    }
+    match writer_type {
+        WriterType::Text => <TextWriter as Writer>::write(inputs, output, &filter).unwrap(),
+        _ => unimplemented!()
+    };
 }

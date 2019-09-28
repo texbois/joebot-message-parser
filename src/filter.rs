@@ -3,13 +3,13 @@ use chrono::NaiveDateTime;
 use std::collections::BTreeSet;
 
 #[derive(Default)]
-pub struct Filter {
+pub struct Filter<'a> {
     pub since_date: Option<NaiveDateTime>,
-    pub short_name_blacklist: Option<BTreeSet<String>>,
+    pub short_name_blacklist: Option<BTreeSet<&'a str>>,
 }
 
-impl Filter {
-    pub fn filter_event<'a>(&self, event: MessageEvent<'a>) -> Option<MessageEvent<'a>> {
+impl<'a> Filter<'a> {
+    pub fn filter_event<'e>(&self, event: MessageEvent<'e>) -> Option<MessageEvent<'e>> {
         match event {
             MessageEvent::ShortNameExtracted(short_name) => {
                 if let Some(ref blacklist) = self.short_name_blacklist {
