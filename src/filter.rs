@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 
 #[derive(Default)]
 pub struct Filter {
-    pub min_date: Option<NaiveDateTime>,
+    pub since_date: Option<NaiveDateTime>,
     pub short_name_blacklist: Option<BTreeSet<String>>,
 }
 
@@ -25,10 +25,10 @@ impl Filter {
                 }
             }
             MessageEvent::DateExtracted(date) => {
-                if let Some(ref min_date) = self.min_date {
+                if let Some(ref since_date) = self.since_date {
                     let msg_date =
                         NaiveDateTime::parse_from_str(date, "%Y.%m.%d %H:%M:%S").unwrap();
-                    if msg_date >= *min_date {
+                    if msg_date >= *since_date {
                         Some(event)
                     }
                     else {
