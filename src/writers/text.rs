@@ -12,17 +12,22 @@ impl Writer for TextWriter {
         filter: &Filter<'a>,
     ) -> quick_xml::Result<()>
     {
-        let folded: String = fold_html(inputs[0], String::new(), |mut acc, event| match event {
-            MessageEvent::BodyExtracted(body) if !body.is_empty() => {
-                acc += &body;
-                acc += "\n";
-                EventResult::Consumed(acc)
-            }
-            _ => EventResult::Consumed(acc),
-        })?;
+        let folded: quick_xml::Result<Vec<String>> = inputs
+            .iter()
+            .map(|i| {
+                fold_html(i, String::new(), |mut acc, event| match event {
+                    MessageEvent::BodyExtracted(body) if !body.is_empty() => {
+                        acc += &body;
+                        acc += "\n";
+                        EventResult::Consumed(acc)
+                    }
+                    _ => EventResult::Consumed(acc),
+                })
+            })
+            .collect();
 
         let mut out = std::fs::File::create(output)?;
-        for acc in &[folded] {
+        for acc in folded?.iter() {
             write!(&mut out, "{}", acc)?;
         }
         Ok(())
