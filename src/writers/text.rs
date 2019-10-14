@@ -15,13 +15,18 @@ impl Writer for TextWriter {
         let folded: quick_xml::Result<Vec<String>> = inputs
             .iter()
             .map(|i| {
-                fold_html(i, String::new(), |mut acc, event| match event {
-                    MessageEvent::BodyExtracted(body) if !body.is_empty() => {
-                        acc += &body;
-                        acc += "\n";
-                        EventResult::Consumed(acc)
+                fold_html(i, String::new(), |mut acc, event| {
+                    match filter.filter_event(event) {
+                        Some(e) => match e {
+                            MessageEvent::BodyExtracted(body) if !body.is_empty() => {
+                                acc += &body;
+                                acc += "\n";
+                                EventResult::Consumed(acc)
+                            }
+                            _ => EventResult::Consumed(acc),
+                        },
+                        None => EventResult::SkipMessage(acc),
                     }
-                    _ => EventResult::Consumed(acc),
                 })
             })
             .collect();
