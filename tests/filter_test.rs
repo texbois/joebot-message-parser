@@ -48,7 +48,7 @@ fn it_filters_by_min_date() {
 }
 
 #[test]
-fn it_filters_by_short_name() {
+fn it_filters_by_short_name_blacklist() {
     let mut blacklist = std::collections::BTreeSet::new();
     blacklist.insert("sota");
     let filter = Filter {
@@ -64,6 +64,31 @@ fn it_filters_by_short_name() {
     assert!(matched[&1].contains(&"ShortNameExtracted"));
     assert!(matched[&1].contains(&"DateExtracted"));
     assert!(matched[&1].contains(&"BodyExtracted"));
+}
+
+#[test]
+fn it_filters_by_short_name_whitelist() {
+    let mut whitelist = std::collections::BTreeSet::new();
+    whitelist.insert("sota");
+    let filter = Filter {
+        short_name_whitelist: Some(whitelist),
+        ..Default::default()
+    };
+    let matched = matches(fixture!("messages.html"), filter);
+    for id in [0, 2, 3].into_iter() {
+        assert!(matched[id].contains(&"FullNameExtracted"));
+        assert!(matched[id].contains(&"ShortNameExtracted"));
+        assert!(matched[id].contains(&"DateExtracted"));
+        if *id != 2 {
+            assert!(matched[id].contains(&"BodyExtracted"));
+            assert_eq!(matched[id].len(), 4);
+        }
+        else {
+            assert_eq!(matched[id].len(), 3);
+        }
+    }
+    assert!(matched[&1].contains(&"FullNameExtracted"));
+    assert_eq!(matched[&1].len(), 1);
 }
 
 fn matches<P>(path: P, filter: Filter) -> HashMap<i32, Vec<&'static str>>

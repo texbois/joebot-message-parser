@@ -20,8 +20,15 @@ fn main() {
                 .takes_value(true)
                 .case_insensitive(true)
                 .possible_values(&WriterType::variants()),
-            Arg::with_name("ignore-names")
-                .long("ignore-names")
+            Arg::with_name("only-include-names")
+                .long("only-include-names")
+                .help("Filter: screen names (id...) whose messages are included")
+                .multiple(true)
+                .use_delimiter(true)
+                .takes_value(true)
+                .conflicts_with("exclude-names"),
+            Arg::with_name("exclude-names")
+                .long("exclude-names")
                 .help("Filter: screen names (id...) whose messages are excluded")
                 .multiple(true)
                 .use_delimiter(true)
@@ -50,11 +57,13 @@ fn main() {
     let output = matches.value_of("output").unwrap();
     let inputs = matches.values_of("inputs").map(|ins| ins.collect()).unwrap();
 
-    let short_name_blacklist = matches.values_of("ignore-names").map(|ns| ns.collect());
+    let short_name_whitelist = matches.values_of("only-include-names").map(|ns| ns.collect());
+    let short_name_blacklist = matches.values_of("exclude-names").map(|ns| ns.collect());
     let since_date = matches
         .value_of("since-date")
         .map(|d| NaiveDateTime::parse_from_str(d, "%Y.%m.%d %H:%M:%S").unwrap());
     let filter = Filter {
+        short_name_whitelist,
         short_name_blacklist,
         since_date,
     };
