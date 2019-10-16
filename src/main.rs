@@ -4,7 +4,7 @@ extern crate clap;
 use chrono::NaiveDateTime;
 use clap::{App, Arg};
 use joebot_message_parser::filter::Filter;
-use joebot_message_parser::writers::{TextWriter, Writer};
+use joebot_message_parser::writers::TextWriter;
 
 arg_enum! {
     #[derive(Debug)]
@@ -39,6 +39,10 @@ fn main() {
                 .multiple(true)
                 .use_delimiter(true)
                 .takes_value(true),
+            Arg::with_name("text-delimiter")
+                .long("text-delimiter")
+                .help("Delimiter inserted between messages for text output (newline by default). Ignored for other writers")
+                .takes_value(true),
             Arg::with_name("output")
                 .short("o")
                 .help("Output file path")
@@ -55,9 +59,14 @@ fn main() {
 
     let writer_type = value_t!(matches.value_of("writer"), WriterType).unwrap_or_else(|e| e.exit());
     let output = matches.value_of("output").unwrap();
-    let inputs = matches.values_of("inputs").map(|ins| ins.collect()).unwrap();
+    let inputs = matches
+        .values_of("inputs")
+        .map(|ins| ins.collect())
+        .unwrap();
 
-    let short_name_whitelist = matches.values_of("only-include-names").map(|ns| ns.collect());
+    let short_name_whitelist = matches
+        .values_of("only-include-names")
+        .map(|ns| ns.collect());
     let short_name_blacklist = matches.values_of("exclude-names").map(|ns| ns.collect());
     let since_date = matches
         .value_of("since-date")
@@ -69,7 +78,11 @@ fn main() {
     };
 
     match writer_type {
-        WriterType::Text => <TextWriter as Writer>::write(inputs, output, &filter).unwrap(),
-        _ => unimplemented!()
+        WriterType::Text => {
+            let delimiter = matches.value_of("text-delimiter").unwrap_or("\n");
+            let text_writer = TextWriter { delimiter };
+            text_writer.write(inputs, output, &filter).unwrap()
+        }
+        _ => unimplemented!(),
     };
 }

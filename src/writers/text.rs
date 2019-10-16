@@ -1,15 +1,17 @@
 use crate::filter::Filter;
 use crate::reader::{fold_html, EventResult, MessageEvent};
-use crate::writers::Writer;
 use std::io::Write;
 
-pub struct TextWriter;
+pub struct TextWriter<'a> {
+    pub delimiter: &'a str,
+}
 
-impl Writer for TextWriter {
-    fn write<'a>(
-        inputs: Vec<&'a str>,
-        output: &'a str,
-        filter: &Filter<'a>,
+impl<'a> TextWriter<'a> {
+    pub fn write<'w>(
+        &self,
+        inputs: Vec<&'w str>,
+        output: &'w str,
+        filter: &Filter<'w>,
     ) -> quick_xml::Result<()>
     {
         let folded: quick_xml::Result<Vec<String>> = inputs
@@ -20,7 +22,7 @@ impl Writer for TextWriter {
                         Some(e) => match e {
                             MessageEvent::BodyExtracted(body) if !body.is_empty() => {
                                 acc += &body;
-                                acc += "\n";
+                                acc += self.delimiter;
                                 EventResult::Consumed(acc)
                             }
                             _ => EventResult::Consumed(acc),
