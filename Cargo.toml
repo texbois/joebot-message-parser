@@ -1,5 +1,5 @@
 [package]
-name = "joebot-message-parser"
+name = "vkopt-message-parser"
 version = "0.1.0"
 authors = ["texbois"]
 edition = "2018"
@@ -9,6 +9,6 @@ edition = "2018"
 [dependencies]
 regex = "1"
 lazy_static = "1.4.0"
-quick-xml = "0.16"
+quick-xml = "0.17"
 chrono = "0.4"
 clap = "2.33"

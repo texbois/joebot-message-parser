@@ -3,8 +3,8 @@ extern crate clap;
 
 use chrono::NaiveDateTime;
 use clap::{App, Arg};
-use joebot_message_parser::filter::Filter;
-use joebot_message_parser::writers::TextWriter;
+use vkopt_message_parser::filter::Filter;
+use vkopt_message_parser::writers::TextWriter;
 
 arg_enum! {
     #[derive(Debug)]
@@ -12,7 +12,7 @@ arg_enum! {
 }
 
 fn main() {
-    let matches = App::new("Joebot Message Parser")
+    let matches = App::new("VkOpt Message Parser")
         .args(&[
             Arg::with_name("writer")
                 .help("Output writer")

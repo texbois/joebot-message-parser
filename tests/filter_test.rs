@@ -1,5 +1,5 @@
-use joebot_message_parser::filter::Filter;
-use joebot_message_parser::reader::{fold_html, EventResult, MessageEvent};
+use vkopt_message_parser::filter::Filter;
+use vkopt_message_parser::reader::{fold_html, EventResult, MessageEvent};
 use std::collections::HashMap;
 
 macro_rules! fixture {

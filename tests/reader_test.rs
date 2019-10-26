@@ -1,4 +1,4 @@
-use joebot_message_parser::reader::{fold_html, MessageEvent, EventResult};
+use vkopt_message_parser::reader::{fold_html, MessageEvent, EventResult};
 
 macro_rules! fixture {
     ($name: expr) => {
