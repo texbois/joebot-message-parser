@@ -1,25 +1,12 @@
-#[macro_use]
-extern crate clap;
-
 use chrono::NaiveDateTime;
 use clap::{App, Arg};
+use std::io::Write;
 use vkopt_message_parser::filter::Filter;
-use vkopt_message_parser::writers::TextWriter;
-
-arg_enum! {
-    #[derive(Debug)]
-    enum WriterType { Taki, Text }
-}
+use vkopt_message_parser::reader::{fold_html, EventResult, MessageEvent};
 
 fn main() {
     let matches = App::new("VkOpt Message Parser")
         .args(&[
-            Arg::with_name("writer")
-                .help("Output writer")
-                .required(true)
-                .takes_value(true)
-                .case_insensitive(true)
-                .possible_values(&WriterType::variants()),
             Arg::with_name("only-include-names")
                 .long("only-include-names")
                 .help("Filter: screen names (id...) whose messages are included")
@@ -41,7 +28,7 @@ fn main() {
                 .takes_value(true),
             Arg::with_name("text-delimiter")
                 .long("text-delimiter")
-                .help("Delimiter inserted between messages for text output (newline by default). Ignored for other writers")
+                .help("Delimiter inserted between messages (newline by default)")
                 .takes_value(true),
             Arg::with_name("output")
                 .short("o")
@@ -57,12 +44,13 @@ fn main() {
         ])
         .get_matches();
 
-    let writer_type = value_t!(matches.value_of("writer"), WriterType).unwrap_or_else(|e| e.exit());
     let output = matches.value_of("output").unwrap();
     let inputs = matches
         .values_of("inputs")
         .map(|ins| ins.collect())
         .unwrap();
+
+    let delimiter = matches.value_of("text-delimiter").unwrap_or("\n");
 
     let short_name_whitelist = matches
         .values_of("only-include-names")
@@ -77,12 +65,38 @@ fn main() {
         since_date,
     };
 
-    match writer_type {
-        WriterType::Text => {
-            let delimiter = matches.value_of("text-delimiter").unwrap_or("\n");
-            let text_writer = TextWriter { delimiter };
-            text_writer.write(inputs, output, &filter).unwrap()
-        }
-        _ => unimplemented!(),
-    };
+    write(inputs, output, &filter, delimiter).unwrap();
+}
+
+fn write<'w>(
+    inputs: Vec<&'w str>,
+    output: &'w str,
+    filter: &Filter<'w>,
+    delimiter: &'w str,
+) -> quick_xml::Result<()>
+{
+    let folded: quick_xml::Result<Vec<String>> = inputs
+        .iter()
+        .map(|i| {
+            fold_html(i, String::new(), |mut acc, event| {
+                match filter.filter_event(event) {
+                    Some(e) => match e {
+                        MessageEvent::BodyExtracted(body) if !body.is_empty() => {
+                            acc += &body;
+                            acc += delimiter;
+                            EventResult::Consumed(acc)
+                        }
+                        _ => EventResult::Consumed(acc),
+                    },
+                    None => EventResult::SkipMessage(acc),
+                }
+            })
+        })
+        .collect();
+
+    let mut out = std::fs::File::create(output)?;
+    for acc in folded?.iter() {
+        write!(&mut out, "{}", acc)?;
+    }
+    Ok(())
 }
