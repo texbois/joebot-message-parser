@@ -1,6 +1,6 @@
 /target
 **/*.rs.bk
-messages.html
-!/tests/fixtures/*.html
-text
-*.sw[op]
+
+messages*
+text*
+whatever.html

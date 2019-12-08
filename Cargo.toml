@@ -1,8 +1,11 @@
 [package]
 name = "vkopt-message-parser"
 version = "0.1.0"
-authors = ["texbois"]
 edition = "2018"
+description = "A streaming parser for VkOpt .html chat message dumps"
+authors = ["texbois"]
+repository = "https://github.com/texbois/vkopt-message-parser"
+license = "CC0-1.0"
 
 [dependencies]
 regex = "1"
