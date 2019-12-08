@@ -1,5 +1,7 @@
 # VkOpt Message Parser
 
+[![](http://meritbadge.herokuapp.com/vkopt-message-parser)](https://crates.io/crates/vkopt-message-parser)
+
 Tested on Rust 1.39.
 
 ## CLI Example
