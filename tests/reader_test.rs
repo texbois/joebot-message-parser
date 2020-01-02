@@ -1,18 +1,27 @@
-use vkopt_message_parser::reader::{fold_html, EventResult};
+use vkopt_message_parser::reader::{fold_html, EventResult, MessageEvent};
 
 macro_rules! assert_events {
     ($actual: expr, $($expected: expr),+) => {
-        assert_eq!($actual, &[$($expected.to_owned(),)+])
+        assert_eq!($actual.to_vec(), vec![$($expected.to_owned(),)+])
     };
 }
 
 fn read_events(fixture: &str) -> Vec<String> {
+    read_events_skipping(fixture, |_| true)
+}
+
+fn read_events_skipping<P : Fn(&MessageEvent) -> bool>(fixture: &str, pred: P) -> Vec<String> {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures")
         .join(fixture);
     fold_html(path, Vec::new(), |mut vec, event| {
-        vec.push(format!("{:?}", event));
-        EventResult::Consumed(vec)
+            vec.push(format!("{:?}", event));
+        if pred(&event) {
+            EventResult::Consumed(vec)
+        }
+        else {
+            EventResult::SkipMessage(vec)
+        }
     })
     .unwrap()
 }
@@ -22,12 +31,12 @@ fn it_parses_text_messages() {
     let events = read_events("messages.html");
     assert_events!(
         &events[..6],
-        "Start",
+        "Start(0)",
         "FullNameExtracted(\"Sota\")",
         "ShortNameExtracted(\"sota\")",
         "DateExtracted(\"2018.01.21 11:05:13\")",
         "BodyExtracted(\"Hi Denko\\n\\nI’m drinking jasmine tea right now, thinking about what to have for dinner (´･ω･`)\")",
-        "Start"
+        "Start(0)"
     );
 }
 
@@ -36,12 +45,12 @@ fn it_parses_emoji() {
     let events = read_events("messages.html");
     assert_events!(
         &events[5..11],
-        "Start",
+        "Start(0)",
         "FullNameExtracted(\"Denko\")",
         "ShortNameExtracted(\"denko\")",
         "DateExtracted(\"2018.01.21 17:02:54\")",
         "BodyExtracted(\"🤔🤔🤔\")",
-        "Start"
+        "Start(0)"
     );
 }
 
@@ -50,18 +59,96 @@ fn it_parses_attachments_without_body() {
     let events = read_events("messages.html");
     assert_events!(
         &events[10..15],
-        "Start",
+        "Start(0)",
         "FullNameExtracted(\"Sota\")",
         "ShortNameExtracted(\"sota\")",
         "DateExtracted(\"2018.01.22 10:03:04\")",
-        "Start"
+        "Start(0)"
     );
     assert_events!(
         &events[14..],
-        "Start",
+        "Start(0)",
         "FullNameExtracted(\"Sota\")",
         "ShortNameExtracted(\"sota\")",
         "DateExtracted(\"2018.01.22 10:05:13\")",
         "BodyExtracted(\"W-what do you think? I hope you like it (´･ω･`)\")"
+    );
+}
+
+#[test]
+fn it_parses_forwarded_messages_with_arbitrary_nesting() {
+    let events = read_events("messages_forwarded.html");
+    assert_events!(
+        &events,
+        "Start(0)",
+        "FullNameExtracted(\"Denko\")",
+        "ShortNameExtracted(\"denko\")",
+        "DateExtracted(\"2019.01.02 07:03:18\")",
+        "BodyExtracted(\"take it and leave\")",
+        "Start(1)",
+        "FullNameExtracted(\"Sota\")",
+        "ShortNameExtracted(\"sota\")",
+        "DateExtracted(\"2019.01.02 07:02:58\")",
+        "BodyExtracted(\"pwetty pwease\")",
+        "Start(1)",
+        "FullNameExtracted(\"Sota\")",
+        "ShortNameExtracted(\"sota\")",
+        "DateExtracted(\"2019.01.02 07:03:04\")",
+        "BodyExtracted(\"pwease don\\\'t ignore me (´･ω･`)\")",
+        "Start(2)",
+        "FullNameExtracted(\"Sota\")",
+        "ShortNameExtracted(\"sota\")",
+        "DateExtracted(\"2018.01.21 20:48:19\")",
+        "BodyExtracted(\"how about now? (´･ω･`)\")",
+        "Start(3)",
+        "FullNameExtracted(\"Denko\")",
+        "ShortNameExtracted(\"denko\")",
+        "DateExtracted(\"2018.01.21 20:48:07\")",
+        "BodyExtracted(\"ugh you just won\\\'t leave me alone will you\")",
+        "Start(3)",
+        "FullNameExtracted(\"Denko\")",
+        "ShortNameExtracted(\"denko\")",
+        "DateExtracted(\"2018.01.21 20:48:10\")",
+        "BodyExtracted(\"I\\\'ll do it\")",
+        "Start(2)",
+        "FullNameExtracted(\"Denko\")",
+        "ShortNameExtracted(\"denko\")",
+        "DateExtracted(\"2019.01.02 07:03:06\")",
+        "BodyExtracted(\"tomorrow maybe\")"
+    );
+}
+
+#[test]
+fn it_skips_forwarded_messages() {
+    let events = read_events_skipping("messages_forwarded.html", |e| match e {
+        MessageEvent::DateExtracted("2018.01.21 20:48:19") => false,
+        _ => true
+    });
+    assert_events!(
+        &events,
+        "Start(0)",
+        "FullNameExtracted(\"Denko\")",
+        "ShortNameExtracted(\"denko\")",
+        "DateExtracted(\"2019.01.02 07:03:18\")",
+        "BodyExtracted(\"take it and leave\")",
+        "Start(1)",
+        "FullNameExtracted(\"Sota\")",
+        "ShortNameExtracted(\"sota\")",
+        "DateExtracted(\"2019.01.02 07:02:58\")",
+        "BodyExtracted(\"pwetty pwease\")",
+        "Start(1)",
+        "FullNameExtracted(\"Sota\")",
+        "ShortNameExtracted(\"sota\")",
+        "DateExtracted(\"2019.01.02 07:03:04\")",
+        "BodyExtracted(\"pwease don\\\'t ignore me (´･ω･`)\")",
+        "Start(2)",
+        "FullNameExtracted(\"Sota\")",
+        "ShortNameExtracted(\"sota\")",
+        "DateExtracted(\"2018.01.21 20:48:19\")",
+        "Start(2)",
+        "FullNameExtracted(\"Denko\")",
+        "ShortNameExtracted(\"denko\")",
+        "DateExtracted(\"2019.01.02 07:03:06\")",
+        "BodyExtracted(\"tomorrow maybe\")"
     );
 }

@@ -3,4 +3,6 @@
 
 messages*
 text*
-whatever.html
+*.html
+!tests/fixtures/messages.html
+!tests/fixtures/messages_forwarded.html

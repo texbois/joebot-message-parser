@@ -98,7 +98,7 @@ where P: AsRef<std::path::Path> {
         fixture!(path),
         HashMap::new(),
         |mut matches: HashMap<i32, Vec<&'static str>>, event| {
-            if let MessageEvent::Start = event {
+            if let MessageEvent::Start(..) = event {
                 msgid += 1;
                 EventResult::Consumed(matches)
             }

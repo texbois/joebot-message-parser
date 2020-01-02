@@ -10,7 +10,7 @@ lazy_static! {
 
 #[derive(Debug)]
 pub enum MessageEvent<'a> {
-    Start,
+    Start(u32), // > 0 indicates the nesting level for forwarded message
     FullNameExtracted(&'a str),
     ShortNameExtracted(&'a str),
     DateExtracted(&'a str),
@@ -41,6 +41,7 @@ where
     })
 }
 
+#[derive(Debug)]
 enum ParseState {
     Prelude,
     NoMessage,
@@ -57,7 +58,7 @@ enum ParseState {
 }
 
 macro_rules! raise_event_and_advance_state {
-    ($reducer: expr, $acc: ident, $state:ident, $event: expr, $next_state: expr) => {
+    ($reducer: expr, $acc: ident, $state: ident, $event: expr, $next_state: expr) => {
         match $reducer($acc, $event) {
             EventResult::Consumed(next_acc) => {
                 $acc = next_acc;
@@ -80,6 +81,9 @@ where
     let mut state = ParseState::Prelude;
     let mut acc = init;
 
+    let mut msg_level = 0;
+    let mut attachment_div_level = 0;
+
     loop {
         match reader.read_event(&mut buf) {
             Ok(Event::Start(ref e)) => {
@@ -93,7 +97,7 @@ where
                             reducer,
                             acc,
                             state,
-                            MessageEvent::Start,
+                            MessageEvent::Start(msg_level),
                             ParseState::MessageStart
                         );
                     }
@@ -102,9 +106,6 @@ where
                     }
                     ParseState::MessageFullNameExtracted if e.name() == b"a" => {
                         state = ParseState::MessageShortNameStart
-                    }
-                    ParseState::MessageShortNameExtracted if e.name() == b"a" => {
-                        state = ParseState::MessageDateStart
                     }
                     ParseState::MessageDateExtracted
                         if e.name() == b"div" && class_eq(&mut e.attributes(), b"msg_body") =>
@@ -122,6 +123,15 @@ where
                         if e.name() == b"div" && class_eq(&mut e.attributes(), b"attacments") =>
                     {
                         state = ParseState::MessageAttachmentsStart
+                    }
+                    ParseState::MessageDateExtracted
+                    | ParseState::MessageBodyExtracted
+                    | ParseState::NoMessage
+                        if e.name() == b"div" && class_eq(&mut e.attributes(), b"fwd") =>
+                    {
+                        msg_level += 1;
+                        attachment_div_level += 2; // div class="att_head" + div class="fwd"
+                        state = ParseState::NoMessage;
                     }
                     _ => {}
                 };
@@ -148,14 +158,17 @@ where
                     );
                 }
                 ParseState::MessageDateStart => {
-                    let date = reader.decode(e.escaped())?;
-                    raise_event_and_advance_state!(
-                        reducer,
-                        acc,
-                        state,
-                        MessageEvent::DateExtracted(date),
-                        ParseState::MessageDateExtracted
-                    );
+                    let maybe_date = e.escaped().trim();
+                    if !maybe_date.is_empty() {
+                        let date = reader.decode(maybe_date)?;
+                        raise_event_and_advance_state!(
+                            reducer,
+                            acc,
+                            state,
+                            MessageEvent::DateExtracted(date),
+                            ParseState::MessageDateExtracted
+                        );
+                    }
                 }
                 ParseState::MessageBodyStart(ref mut body) => {
                     body.push_str(reader.decode(e.escaped())?)
@@ -169,7 +182,9 @@ where
                 _ => (),
             },
             Ok(Event::End(ref e)) => match state {
+                ParseState::MessageShortNameExtracted => state = ParseState::MessageDateStart,
                 ParseState::MessageBodyStart(body) if e.name() == b"div" => {
+                    attachment_div_level += 1; // msg_body's closing tag
                     raise_event_and_advance_state!(
                         reducer,
                         acc,
@@ -181,7 +196,18 @@ where
                 ParseState::MessageAttachmentsStart if e.name() == b"div" => {
                     state = ParseState::NoMessage;
                 }
-                _ => (),
+                ParseState::MessageBodyExtracted
+                | ParseState::NoMessage
+                    if e.name() == b"div" =>
+                {
+                    if attachment_div_level > 0 {
+                        attachment_div_level -= 1;
+                        if attachment_div_level == 0 && msg_level > 0 {
+                            msg_level -= 1;
+                        }
+                    }
+                }
+                _ => {}
             },
             Err(e) => panic!("Error at position {}: {:?}", reader.buffer_position(), e),
             Ok(Event::Eof) => break,
@@ -204,4 +230,24 @@ fn get_attr<'a>(attrs: &'a mut Attributes, key: &[u8]) -> Option<Cow<'a, [u8]>> 
         Ok(a) if a.key == key => Some(a.value),
         _ => None,
     })
+}
+
+// Based on https://stackoverflow.com/a/31102496/1726690
+trait RawText {
+    fn trim(&self) -> &Self;
+}
+
+impl RawText for [u8] {
+    fn trim(&self) -> &[u8] {
+        fn is_not_whitespace(c: &u8) -> bool {
+            *c != b' ' && *c != b'\r' && *c != b'\n'
+        }
+
+        if let Some(first) = self.iter().position(is_not_whitespace) {
+            let last = self.iter().rposition(is_not_whitespace).unwrap();
+            &self[first..last + 1]
+        } else {
+            &[]
+        }
+    }
 }
