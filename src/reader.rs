@@ -57,16 +57,27 @@ enum ParseState {
     MessageAttachmentsStart,
 }
 
+struct ParseStateHolder<A, F>
+where
+    F: for<'e> FnMut(A, MessageEvent<'e>) -> EventResult<A>,
+{
+    at: ParseState,
+    msg_level: u32,
+    attachment_div_level: u32,
+    acc: A,
+    reducer: F,
+}
+
 macro_rules! raise_event_and_advance_state {
-    ($reducer: expr, $acc: ident, $state: ident, $event: expr, $next_state: expr) => {
-        match $reducer($acc, $event) {
+    ($state: ident, $event: expr, $next_state: expr) => {
+        match ($state.reducer)($state.acc, $event) {
             EventResult::Consumed(next_acc) => {
-                $acc = next_acc;
-                $state = $next_state;
+                $state.acc = next_acc;
+                $state.at = $next_state;
             }
             EventResult::SkipMessage(next_acc) => {
-                $acc = next_acc;
-                $state = ParseState::NoMessage;
+                $state.acc = next_acc;
+                $state.at = ParseState::NoMessage;
             }
         }
     };
@@ -78,70 +89,66 @@ where
     F: for<'e> FnMut(A, MessageEvent<'e>) -> EventResult<A>,
 {
     let mut buf = Vec::new();
-    let mut state = ParseState::Prelude;
-    let mut acc = init;
-
-    let mut msg_level = 0;
-    let mut attachment_div_level = 0;
+    let mut state = ParseStateHolder {
+        at: ParseState::Prelude,
+        msg_level: 0,
+        attachment_div_level: 0,
+        acc: init,
+        reducer,
+    };
 
     loop {
         match reader.read_event(&mut buf) {
-            Ok(Event::Start(ref e)) => {
-                match state {
-                    // There's an <hr> tag right before the first msg_item
-                    ParseState::Prelude if e.name() == b"hr" => state = ParseState::NoMessage,
-                    ParseState::NoMessage | ParseState::MessageBodyExtracted
-                        if e.name() == b"div" && class_eq(&mut e.attributes(), b"msg_item") =>
-                    {
-                        raise_event_and_advance_state!(
-                            reducer,
-                            acc,
-                            state,
-                            MessageEvent::Start(msg_level),
-                            ParseState::MessageStart
-                        );
+            Ok(Event::Start(ref e)) => match state.at {
+                // There's an <hr> tag right before the first msg_item
+                ParseState::Prelude if e.name() == b"hr" => state.at = ParseState::NoMessage,
+                ParseState::NoMessage | ParseState::MessageBodyExtracted
+                    if e.name() == b"div" && class_eq(&mut e.attributes(), b"msg_item") =>
+                {
+                    raise_event_and_advance_state!(
+                        state,
+                        MessageEvent::Start(state.msg_level),
+                        ParseState::MessageStart
+                    );
+                }
+                ParseState::MessageStart if e.name() == b"b" => {
+                    state.at = ParseState::MessageFullNameStart
+                }
+                ParseState::MessageFullNameExtracted if e.name() == b"a" => {
+                    state.at = ParseState::MessageShortNameStart
+                }
+                ParseState::MessageDateExtracted
+                    if e.name() == b"div" && class_eq(&mut e.attributes(), b"msg_body") =>
+                {
+                    state.at = ParseState::MessageBodyStart(String::new())
+                }
+                ParseState::MessageBodyStart(ref mut body)
+                    if e.name() == b"img" && class_eq(&mut e.attributes(), b"emoji") =>
+                {
+                    if let Some(alt) = get_attr(&mut e.attributes(), b"alt") {
+                        body.push_str(reader.decode(&alt)?)
                     }
-                    ParseState::MessageStart if e.name() == b"b" => {
-                        state = ParseState::MessageFullNameStart
-                    }
-                    ParseState::MessageFullNameExtracted if e.name() == b"a" => {
-                        state = ParseState::MessageShortNameStart
-                    }
-                    ParseState::MessageDateExtracted
-                        if e.name() == b"div" && class_eq(&mut e.attributes(), b"msg_body") =>
-                    {
-                        state = ParseState::MessageBodyStart(String::new())
-                    }
-                    ParseState::MessageBodyStart(ref mut body)
-                        if e.name() == b"img" && class_eq(&mut e.attributes(), b"emoji") =>
-                    {
-                        if let Some(alt) = get_attr(&mut e.attributes(), b"alt") {
-                            body.push_str(reader.decode(&alt)?)
-                        }
-                    }
-                    ParseState::MessageDateExtracted | ParseState::MessageBodyExtracted
-                        if e.name() == b"div" && class_eq(&mut e.attributes(), b"attacments") =>
-                    {
-                        state = ParseState::MessageAttachmentsStart
-                    }
-                    ParseState::MessageDateExtracted
-                    | ParseState::MessageBodyExtracted
-                    | ParseState::NoMessage
-                        if e.name() == b"div" && class_eq(&mut e.attributes(), b"fwd") =>
-                    {
-                        msg_level += 1;
-                        attachment_div_level += 2; // div class="att_head" + div class="fwd"
-                        state = ParseState::NoMessage;
-                    }
-                    _ => {}
-                };
-            }
-            Ok(Event::Text(e)) => match state {
+                }
+                ParseState::MessageDateExtracted | ParseState::MessageBodyExtracted
+                    if e.name() == b"div" && class_eq(&mut e.attributes(), b"attacments") =>
+                {
+                    state.at = ParseState::MessageAttachmentsStart
+                }
+                ParseState::MessageDateExtracted
+                | ParseState::MessageBodyExtracted
+                | ParseState::NoMessage
+                    if e.name() == b"div" && class_eq(&mut e.attributes(), b"fwd") =>
+                {
+                    state.msg_level += 1;
+                    state.attachment_div_level += 2; // div class="att_head" + div class="fwd"
+                    state.at = ParseState::NoMessage;
+                }
+                _ => {}
+            },
+            Ok(Event::Text(e)) => match state.at {
                 ParseState::MessageFullNameStart => {
                     let full_name = reader.decode(e.escaped())?;
                     raise_event_and_advance_state!(
-                        reducer,
-                        acc,
                         state,
                         MessageEvent::FullNameExtracted(full_name),
                         ParseState::MessageFullNameExtracted
@@ -150,8 +157,6 @@ where
                 ParseState::MessageShortNameStart => {
                     let short_name = reader.decode(e.escaped())?;
                     raise_event_and_advance_state!(
-                        reducer,
-                        acc,
                         state,
                         MessageEvent::ShortNameExtracted(&short_name[1..]), // skip the leading @
                         ParseState::MessageShortNameExtracted
@@ -162,8 +167,6 @@ where
                     if !maybe_date.is_empty() {
                         let date = reader.decode(maybe_date)?;
                         raise_event_and_advance_state!(
-                            reducer,
-                            acc,
                             state,
                             MessageEvent::DateExtracted(date),
                             ParseState::MessageDateExtracted
@@ -175,35 +178,30 @@ where
                 }
                 _ => (),
             },
-            Ok(Event::Empty(ref e)) => match state {
+            Ok(Event::Empty(ref e)) => match state.at {
                 ParseState::MessageBodyStart(ref mut body) if e.name() == b"br" => {
                     body.push_str("\n")
                 }
                 _ => (),
             },
-            Ok(Event::End(ref e)) => match state {
-                ParseState::MessageShortNameExtracted => state = ParseState::MessageDateStart,
+            Ok(Event::End(ref e)) => match state.at {
+                ParseState::MessageShortNameExtracted => state.at = ParseState::MessageDateStart,
                 ParseState::MessageBodyStart(body) if e.name() == b"div" => {
-                    attachment_div_level += 1; // msg_body's closing tag
+                    state.attachment_div_level += 1; // msg_body's closing tag
                     raise_event_and_advance_state!(
-                        reducer,
-                        acc,
                         state,
                         MessageEvent::BodyExtracted(body),
                         ParseState::MessageBodyExtracted
                     );
                 }
                 ParseState::MessageAttachmentsStart if e.name() == b"div" => {
-                    state = ParseState::NoMessage;
+                    state.at = ParseState::NoMessage;
                 }
-                ParseState::MessageBodyExtracted
-                | ParseState::NoMessage
-                    if e.name() == b"div" =>
-                {
-                    if attachment_div_level > 0 {
-                        attachment_div_level -= 1;
-                        if attachment_div_level == 0 && msg_level > 0 {
-                            msg_level -= 1;
+                ParseState::MessageBodyExtracted | ParseState::NoMessage if e.name() == b"div" => {
+                    if state.attachment_div_level > 0 {
+                        state.attachment_div_level -= 1;
+                        if state.attachment_div_level == 0 && state.msg_level > 0 {
+                            state.msg_level -= 1;
                         }
                     }
                 }
@@ -215,7 +213,7 @@ where
         }
         buf.clear();
     }
-    Ok(acc)
+    Ok(state.acc)
 }
 
 fn class_eq(attrs: &mut Attributes, cmp: &[u8]) -> bool {
