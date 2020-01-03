@@ -73,14 +73,16 @@ fn write<'w>(
     output: &'w str,
     filter: &Filter<'w>,
     delimiter: &'w str,
-) -> quick_xml::Result<()>
-{
+) -> quick_xml::Result<()> {
     let folded: quick_xml::Result<Vec<String>> = inputs
         .iter()
         .map(|i| {
             fold_html(i, String::new(), |mut acc, event| {
                 match filter.filter_event(event) {
                     Some(e) => match e {
+                        MessageEvent::Start(nesting) if nesting > 0 => {
+                            EventResult::SkipMessage(acc)
+                        }
                         MessageEvent::BodyExtracted(body) if !body.is_empty() => {
                             acc += &body;
                             acc += delimiter;
