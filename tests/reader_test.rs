@@ -160,3 +160,36 @@ fn it_skips_forwarded_messages_2() {
         "Start(1)"
     );
 }
+
+#[test]
+fn it_parses_forwarded_messages_with_attachments() {
+    let events = read_events("messages_forwarded_att.html");
+
+    assert_events!(
+        &events,
+        "Start(0)",
+        "FullNameExtracted(\"Denko\")",
+        "ShortNameExtracted(\"denko\")",
+        "DateExtracted(\"2018.01.21 19:00:55\")",
+        "Start(0)",
+        "FullNameExtracted(\"Denko\")",
+        "ShortNameExtracted(\"denko\")",
+        "DateExtracted(\"2018.01.21 19:02:09\")",
+        "BodyExtracted(\"I hope this time is the last time for real\")",
+        "Start(1)",
+        "FullNameExtracted(\"Sota\")",
+        "ShortNameExtracted(\"sota\")",
+        "DateExtracted(\"2018.01.21 18:59:35\")",
+        "BodyExtracted(\"thankuwu:3:3:3:3:3\")",
+        "Start(2)",
+        "FullNameExtracted(\"Denko\")",
+        "ShortNameExtracted(\"denko\")",
+        "DateExtracted(\"2018.01.21 18:58:09\")",
+        "BodyExtracted(\" \")",
+        "Start(0)",
+        "FullNameExtracted(\"Sota\")",
+        "ShortNameExtracted(\"sota\")",
+        "DateExtracted(\"2018.01.21 19:36:18\")",
+        "BodyExtracted(\"don\\\'t be a meanie uwu you awe so bwutiful\")"
+    );
+}

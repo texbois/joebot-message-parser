@@ -72,9 +72,18 @@ where
     reducer: F,
 }
 
+impl<A, F> ParseStateHolder<A, F>
+where
+    F: for<'e> FnMut(A, MessageEvent<'e>) -> EventResult<A>,
+{
+    fn advance(&mut self, new_state: ParseState) {
+        self.at = new_state;
+    }
+}
+
 macro_rules! raise_event_and_advance_state {
     ($state: ident, $event: expr, $next_state: expr) => {
-        $state.at = $next_state;
+        $state.advance($next_state);
         match $state.skip_level {
             Some(max_level) if $state.msg_level > max_level => (),
             Some(_) if $state.at != ParseState::MessageStart => (),
@@ -111,7 +120,7 @@ where
         match reader.read_event(&mut buf) {
             Ok(Event::Start(ref e)) => match state.at {
                 // There's an <hr> tag right before the first msg_item
-                ParseState::Prelude if e.name() == b"hr" => state.at = ParseState::NoMessage,
+                ParseState::Prelude if e.name() == b"hr" => state.advance(ParseState::NoMessage),
                 ParseState::NoMessage
                 | ParseState::MessageBodyExtracted
                 | ParseState::MessageAttachmentsExtracted
@@ -124,15 +133,15 @@ where
                     );
                 }
                 ParseState::MessageStart if e.name() == b"b" => {
-                    state.at = ParseState::MessageFullNameStart
+                    state.advance(ParseState::MessageFullNameStart);
                 }
                 ParseState::MessageFullNameExtracted if e.name() == b"a" => {
-                    state.at = ParseState::MessageShortNameStart
+                    state.advance(ParseState::MessageShortNameStart);
                 }
                 ParseState::MessageDateExtracted
                     if e.name() == b"div" && class_eq(&mut e.attributes(), b"msg_body") =>
                 {
-                    state.at = ParseState::MessageBodyStart(String::new())
+                    state.advance(ParseState::MessageBodyStart(String::new()));
                 }
                 ParseState::MessageBodyStart(ref mut body)
                     if e.name() == b"img" && class_eq(&mut e.attributes(), b"emoji") =>
@@ -144,7 +153,7 @@ where
                 ParseState::MessageDateExtracted
                     if e.name() == b"div" && e.attributes().next().is_none() =>
                 {
-                    state.at = ParseState::MessageChatActionStart;
+                    state.advance(ParseState::MessageChatActionStart);
                 }
                 ParseState::MessageDateExtracted
                 | ParseState::MessageBodyExtracted
@@ -153,24 +162,26 @@ where
                 {
                     let mut attrs = e.attributes();
                     match get_attr(&mut attrs, b"class") {
-                        Some(cls) if cls.as_ref() == b"attacments" => {
-                            state.at = ParseState::MessageAttachments(0);
+                        Some(cls)
+                            if cls.as_ref() == b"attacments" || cls.as_ref() == b"attacment" =>
+                        {
+                            state.advance(ParseState::MessageAttachments(0));
                         }
                         Some(cls) if cls.as_ref() == b"att_head" => {
-                            state.at = ParseState::MessageForwardedStart;
+                            state.advance(ParseState::MessageForwardedStart);
                         }
                         _ => (),
                     }
                 }
                 ParseState::MessageAttachments(nesting) if e.name() == b"div" => {
-                    state.at = ParseState::MessageAttachments(nesting + 1)
+                    state.advance(ParseState::MessageAttachments(nesting + 1))
                 }
                 ParseState::MessageForwardedStart
                     if e.name() == b"div" && class_eq(&mut e.attributes(), b"fwd") =>
                 {
                     state.msg_level += 1;
                     state.fwd_closed = false;
-                    state.at = ParseState::NoMessage;
+                    state.advance(ParseState::NoMessage);
                 }
                 _ => {}
             },
@@ -214,26 +225,31 @@ where
                 _ => (),
             },
             Ok(Event::End(ref e)) => match state.at {
-                ParseState::MessageShortNameExtracted => state.at = ParseState::MessageDateStart,
-                ParseState::MessageBodyStart(body) if e.name() == b"div" => {
+                ParseState::MessageShortNameExtracted => {
+                    state.advance(ParseState::MessageDateStart)
+                }
+                ParseState::MessageBodyStart(ref body) if e.name() == b"div" => {
+                    let text = body.clone();
                     raise_event_and_advance_state!(
                         state,
-                        MessageEvent::BodyExtracted(body),
+                        MessageEvent::BodyExtracted(text),
                         ParseState::MessageBodyExtracted
                     );
                 }
                 ParseState::MessageChatActionStart if e.name() == b"div" => {
-                    state.at = ParseState::MessageBodyExtracted;
+                    state.advance(ParseState::MessageBodyExtracted);
                 }
                 ParseState::MessageAttachments(nesting) if e.name() == b"div" => {
-                    state.at = if nesting > 0 {
+                    state.advance(if nesting > 0 {
                         ParseState::MessageAttachments(nesting - 1)
                     } else {
                         ParseState::MessageAttachmentsExtracted
-                    };
+                    });
                 }
-                ParseState::MessageBodyExtracted if e.name() == b"div" => {
-                    state.at = ParseState::NoMessage;
+                ParseState::MessageAttachmentsExtracted | ParseState::MessageBodyExtracted
+                    if e.name() == b"div" =>
+                {
+                    state.advance(ParseState::NoMessage);
                 }
                 ParseState::NoMessage if e.name() == b"div" => {
                     if state.msg_level > 0 {
