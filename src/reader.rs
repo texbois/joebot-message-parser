@@ -76,8 +76,8 @@ where
 macro_rules! msg_event {
     ($state: ident, $event: expr) => {
         match $state.skip_level {
-            Some(max_level) if $state.msg_level > max_level => (),
-            Some(_) if $state.at != ParseState::MessageStart => (),
+            Some(max_level) if $state.msg_level > max_level => {}
+            Some(_) if $state.at != MessageStart => {}
             _ => match ($state.reducer)($state.acc, $event) {
                 EventResult::Consumed(next_acc) => {
                     $state.acc = next_acc;
@@ -92,14 +92,26 @@ macro_rules! msg_event {
     };
 }
 
+macro_rules! q {
+    ($event: ident, $tag: literal, $attr: literal) => {
+        $event.name() == $tag && $event.attributes_raw().contains_substring($attr)
+    };
+    ($event: ident, $tag: literal) => {
+        $event.name() == $tag
+    };
+}
+
 fn fold_with_reader<B, A, F>(mut reader: Reader<B>, init: A, reducer: F) -> quick_xml::Result<A>
 where
     B: std::io::BufRead,
     F: for<'e> FnMut(A, MessageEvent<'e>) -> EventResult<A>,
 {
+    use MessageEvent::*;
+    use ParseState::*;
+
     let mut buf = Vec::new();
     let mut state = ParseStateHolder {
-        at: ParseState::Prelude,
+        at: Prelude,
         msg_level: 0,
         fwd_closed: false,
         skip_level: None,
@@ -111,132 +123,106 @@ where
         match reader.read_event(&mut buf) {
             Ok(Event::Start(ref e)) => match state.at {
                 // There's an <hr> tag right before the first msg_item
-                ParseState::Prelude if e.name() == b"hr" => state.advance(ParseState::NoMessage),
-                ParseState::NoMessage
-                | ParseState::MessageBodyExtracted
-                | ParseState::MessageAttachmentsExtracted
-                    if e.name() == b"div" && e.attributes_raw().contains_substring(b"\"msg_item\"") =>
+                Prelude if q!(e, b"hr") => state.advance(NoMessage),
+                NoMessage | MessageBodyExtracted | MessageAttachmentsExtracted
+                    if q!(e, b"div", b"\"msg_item\"") =>
                 {
-                    state.advance(ParseState::MessageStart);
-                    msg_event!(state, MessageEvent::Start(state.msg_level));
+                    state.advance(MessageStart);
+                    msg_event!(state, Start(state.msg_level));
                 }
-                ParseState::MessageStart if e.name() == b"b" => {
-                    state.advance(ParseState::MessageFullNameStart);
+                MessageStart if q!(e, b"b") => {
+                    state.advance(MessageFullNameStart);
                 }
-                ParseState::MessageFullNameExtracted if e.name() == b"a" => {
-                    state.advance(ParseState::MessageShortNameStart);
+                MessageFullNameExtracted if q!(e, b"a") => {
+                    state.advance(MessageShortNameStart);
                 }
-                ParseState::MessageDateExtracted
-                    if e.name() == b"div" && e.attributes_raw().contains_substring(b"\"msg_body\"") =>
-                {
-                    state.advance(ParseState::MessageBodyStart);
+                MessageDateExtracted if q!(e, b"div", b"\"msg_body\"") => {
+                    state.advance(MessageBodyStart);
                 }
-                ParseState::MessageBodyStart
-                    if e.name() == b"img" && e.attributes_raw().contains_substring(b"\"emoji\"") =>
-                {
+                MessageBodyStart if q!(e, b"img", b"\"emoji\"") => {
                     if let Some(alt) = get_attr(&mut e.attributes(), b"alt") {
-                        msg_event!(state, MessageEvent::BodyPartExtracted(reader.decode(&alt)?));
+                        msg_event!(state, BodyPartExtracted(reader.decode(&alt)?));
                     }
                 }
-                ParseState::MessageDateExtracted
-                    if e.name() == b"div" && e.attributes_raw().is_empty() =>
-                {
-                    state.advance(ParseState::MessageChatActionStart);
+                MessageDateExtracted if q!(e, b"div") && e.attributes_raw().is_empty() => {
+                    state.advance(MessageChatActionStart);
                 }
-                ParseState::MessageDateExtracted
-                | ParseState::MessageBodyExtracted
-                | ParseState::MessageAttachmentsExtracted
-                    if e.name() == b"div" =>
+                MessageDateExtracted | MessageBodyExtracted | MessageAttachmentsExtracted
+                    if q!(e, b"div") =>
                 {
                     let mut attrs = e.attributes();
                     match get_attr(&mut attrs, b"class") {
-                        Some(cls)
-                            if cls.as_ref() == b"attacments" || cls.as_ref() == b"attacment" =>
-                        {
-                            state.advance(ParseState::MessageAttachments(0));
+                        Some(cls) if &*cls == b"attacments" || &*cls == b"attacment" => {
+                            state.advance(MessageAttachments(0));
                         }
-                        Some(cls) if cls.as_ref() == b"att_head" => {
-                            state.advance(ParseState::MessageForwardedStart);
+                        Some(cls) if &*cls == b"att_head" => {
+                            state.advance(MessageForwardedStart);
                         }
                         _ => (),
                     }
                 }
-                ParseState::MessageAttachments(nesting) if e.name() == b"div" => {
-                    state.advance(ParseState::MessageAttachments(nesting + 1))
+                MessageAttachments(nesting) if q!(e, b"div") => {
+                    state.advance(MessageAttachments(nesting + 1))
                 }
-                ParseState::MessageForwardedStart
-                    if e.name() == b"div" && e.attributes_raw().contains_substring(b"\"fwd\"") =>
-                {
+                MessageForwardedStart if q!(e, b"div", b"\"fwd\"") => {
                     state.msg_level += 1;
                     state.fwd_closed = false;
-                    state.advance(ParseState::NoMessage);
+                    state.advance(NoMessage);
                 }
                 _ => {}
             },
             Ok(Event::Text(e)) => match state.at {
-                ParseState::MessageFullNameStart => {
-                    state.advance(ParseState::MessageFullNameExtracted);
+                MessageFullNameStart => {
+                    state.advance(MessageFullNameExtracted);
+                    msg_event!(state, FullNameExtracted(reader.decode(e.escaped())?));
+                }
+                MessageShortNameStart => {
+                    state.advance(MessageShortNameExtracted);
                     msg_event!(
                         state,
-                        MessageEvent::FullNameExtracted(reader.decode(e.escaped())?)
+                        ShortNameExtracted(&reader.decode(e.escaped())?[1..]) // skip the leading @
                     );
                 }
-                ParseState::MessageShortNameStart => {
-                    state.advance(ParseState::MessageShortNameExtracted);
-                    msg_event!(
-                        state,
-                        MessageEvent::ShortNameExtracted(&reader.decode(e.escaped())?[1..]) // skip the leading @
-                    );
-                }
-                ParseState::MessageDateStart => {
+                MessageDateStart => {
                     let maybe_date = e.escaped().trim();
                     if !maybe_date.is_empty() {
-                        state.advance(ParseState::MessageDateExtracted);
-                        msg_event!(
-                            state,
-                            MessageEvent::DateExtracted(reader.decode(maybe_date)?)
-                        );
+                        state.advance(MessageDateExtracted);
+                        msg_event!(state, DateExtracted(reader.decode(maybe_date)?));
                     }
                 }
-                ParseState::MessageBodyStart => {
+                MessageBodyStart => {
                     let text = reader.decode(e.escaped())?;
                     if text.contains('[') {
                         let re_text = USER_MENTION_RE.replace_all(text, "$name");
-                        msg_event!(state, MessageEvent::BodyPartExtracted(&re_text));
+                        msg_event!(state, BodyPartExtracted(&re_text));
                     } else if !text.is_empty() {
-                        msg_event!(state, MessageEvent::BodyPartExtracted(&text));
+                        msg_event!(state, BodyPartExtracted(&text));
                     }
                 }
                 _ => (),
             },
             Ok(Event::Empty(ref e)) => match state.at {
-                ParseState::MessageBodyStart if e.name() == b"br" => {
-                    msg_event!(state, MessageEvent::BodyPartExtracted("\n"));
+                MessageBodyStart if q!(e, b"br") => {
+                    msg_event!(state, BodyPartExtracted("\n"));
                 }
                 _ => (),
             },
             Ok(Event::End(ref e)) => match state.at {
-                ParseState::MessageShortNameExtracted => {
-                    state.advance(ParseState::MessageDateStart)
+                MessageShortNameExtracted => state.advance(MessageDateStart),
+                MessageBodyStart | MessageChatActionStart if q!(e, b"div") => {
+                    state.advance(MessageBodyExtracted);
                 }
-                ParseState::MessageBodyStart | ParseState::MessageChatActionStart
-                    if e.name() == b"div" =>
-                {
-                    state.advance(ParseState::MessageBodyExtracted);
-                }
-                ParseState::MessageAttachments(nesting) if e.name() == b"div" => {
+                MessageAttachments(nesting) if q!(e, b"div") => {
                     state.advance(if nesting > 0 {
-                        ParseState::MessageAttachments(nesting - 1)
+                        MessageAttachments(nesting - 1)
                     } else {
-                        ParseState::MessageAttachmentsExtracted
+                        MessageAttachmentsExtracted
                     });
                 }
-                ParseState::MessageAttachmentsExtracted | ParseState::MessageBodyExtracted
-                    if e.name() == b"div" =>
-                {
-                    state.advance(ParseState::NoMessage);
+                MessageAttachmentsExtracted | MessageBodyExtracted if q!(e, b"div") => {
+                    state.advance(NoMessage);
                 }
-                ParseState::NoMessage if e.name() == b"div" => {
+                NoMessage if q!(e, b"div") => {
                     if state.msg_level > 0 {
                         if !state.fwd_closed {
                             state.fwd_closed = true;
