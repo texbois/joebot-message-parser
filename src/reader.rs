@@ -57,6 +57,7 @@ enum ParseState {
     MessageAttachments(u32),
     MessageAttachmentsExtracted,
     MessageForwardedStart,
+    MessageChatActionStart,
 }
 
 struct ParseStateHolder<A, F>
@@ -141,6 +142,11 @@ where
                     }
                 }
                 ParseState::MessageDateExtracted
+                    if e.name() == b"div" && e.attributes().next().is_none() =>
+                {
+                    state.at = ParseState::MessageChatActionStart;
+                }
+                ParseState::MessageDateExtracted
                 | ParseState::MessageBodyExtracted
                 | ParseState::MessageAttachmentsExtracted
                     if e.name() == b"div" =>
@@ -215,6 +221,9 @@ where
                         MessageEvent::BodyExtracted(body),
                         ParseState::MessageBodyExtracted
                     );
+                }
+                ParseState::MessageChatActionStart if e.name() == b"div" => {
+                    state.at = ParseState::MessageBodyExtracted;
                 }
                 ParseState::MessageAttachments(nesting) if e.name() == b"div" => {
                     state.at = if nesting > 0 {

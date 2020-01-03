@@ -3,10 +3,23 @@ mod test_helper;
 use test_helper::*;
 
 #[test]
+fn it_skips_chat_actions() {
+    let events = read_events("messages.html");
+    assert_events!(
+        &events[..5],
+        "Start(0)",
+        "FullNameExtracted(\"Sota\")",
+        "ShortNameExtracted(\"sota\")",
+        "DateExtracted(\"2018.01.21 13:53:59\")",
+        "Start(0)"
+    );
+}
+
+#[test]
 fn it_parses_text_messages() {
     let events = read_events("messages.html");
     assert_events!(
-        &events[..6],
+        &events[4..10],
         "Start(0)",
         "FullNameExtracted(\"Sota\")",
         "ShortNameExtracted(\"sota\")",
@@ -20,7 +33,7 @@ fn it_parses_text_messages() {
 fn it_parses_emoji() {
     let events = read_events("messages.html");
     assert_events!(
-        &events[5..11],
+        &events[9..15],
         "Start(0)",
         "FullNameExtracted(\"Denko\")",
         "ShortNameExtracted(\"denko\")",
@@ -34,7 +47,7 @@ fn it_parses_emoji() {
 fn it_parses_attachments_without_body() {
     let events = read_events("messages.html");
     assert_events!(
-        &events[10..15],
+        &events[14..19],
         "Start(0)",
         "FullNameExtracted(\"Sota\")",
         "ShortNameExtracted(\"sota\")",
@@ -42,7 +55,7 @@ fn it_parses_attachments_without_body() {
         "Start(0)"
     );
     assert_events!(
-        &events[14..],
+        &events[18..],
         "Start(0)",
         "FullNameExtracted(\"Sota\")",
         "ShortNameExtracted(\"sota\")",
