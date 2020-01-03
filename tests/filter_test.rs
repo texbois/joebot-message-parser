@@ -44,7 +44,7 @@ fn it_filters_by_min_date() {
         "FullNameExtracted(\"Sota\")",
         "ShortNameExtracted(\"sota\")",
         "DateExtracted(\"2018.01.22 10:05:13\")",
-        "BodyExtracted(\"W-what do you think? I hope you like it (´･ω･`)\")"
+        "BodyPartExtracted(\"W-what do you think? I hope you like it (´･ω･`)\")"
     );
 }
 
@@ -68,7 +68,9 @@ fn it_filters_by_short_name_blacklist() {
         "FullNameExtracted(\"Denko\")",
         "ShortNameExtracted(\"denko\")",
         "DateExtracted(\"2018.01.21 17:02:54\")",
-        "BodyExtracted(\"🤔🤔🤔\")",
+        "BodyPartExtracted(\"🤔\")",
+        "BodyPartExtracted(\"🤔\")",
+        "BodyPartExtracted(\"🤔\")",
         "Start(0)",
         "FullNameExtracted(\"Sota\")",
         "ShortNameExtracted(\"sota\")",
@@ -96,7 +98,10 @@ fn it_filters_by_short_name_whitelist() {
         "FullNameExtracted(\"Sota\")",
         "ShortNameExtracted(\"sota\")",
         "DateExtracted(\"2018.01.21 11:05:13\")",
-        "BodyExtracted(\"Hi Denko\\n\\nI’m drinking jasmine tea right now, thinking about what to have for dinner (´･ω･`)\")",
+        "BodyPartExtracted(\"Hi Denko\")",
+        "BodyPartExtracted(\"\\n\")",
+        "BodyPartExtracted(\"\\n\")",
+        "BodyPartExtracted(\"I’m drinking jasmine tea right now, thinking about what to have for dinner (´･ω･`)\")",
         "Start(0)",
         "FullNameExtracted(\"Denko\")",
         "ShortNameExtracted(\"denko\")",
@@ -108,6 +113,6 @@ fn it_filters_by_short_name_whitelist() {
         "FullNameExtracted(\"Sota\")",
         "ShortNameExtracted(\"sota\")",
         "DateExtracted(\"2018.01.22 10:05:13\")",
-        "BodyExtracted(\"W-what do you think? I hope you like it (´･ω･`)\")"
+        "BodyPartExtracted(\"W-what do you think? I hope you like it (´･ω･`)\")"
     );
 }

@@ -77,15 +77,21 @@ fn write<'w>(
     let folded: quick_xml::Result<Vec<String>> = inputs
         .iter()
         .map(|i| {
+            let mut message_empty = true;
             fold_html(i, String::new(), |mut acc, event| {
                 match filter.filter_event(event) {
                     Some(e) => match e {
-                        MessageEvent::Start(nesting) if nesting > 0 => {
-                            EventResult::SkipMessage(acc)
+                        MessageEvent::Start(0) => {
+                            if !message_empty {
+                                acc += delimiter;
+                                message_empty = true;
+                            }
+                            EventResult::Consumed(acc)
                         }
-                        MessageEvent::BodyExtracted(body) if !body.is_empty() => {
-                            acc += &body;
-                            acc += delimiter;
+                        MessageEvent::Start(_) => EventResult::SkipMessage(acc),
+                        MessageEvent::BodyPartExtracted(body) if !body.is_empty() => {
+                            acc += body;
+                            message_empty = false;
                             EventResult::Consumed(acc)
                         }
                         _ => EventResult::Consumed(acc),

@@ -10,11 +10,11 @@ lazy_static! {
 
 #[derive(Debug)]
 pub enum MessageEvent<'a> {
-    Start(u32), // > 0 indicates the nesting level for forwarded message
+    Start(u32), // > 0 indicates the nesting level for forwarded messages
     FullNameExtracted(&'a str),
     ShortNameExtracted(&'a str),
     DateExtracted(&'a str),
-    BodyExtracted(String),
+    BodyPartExtracted(&'a str),
 }
 
 pub enum EventResult<A> {
@@ -22,7 +22,7 @@ pub enum EventResult<A> {
     SkipMessage(A),
 }
 
-pub fn fold_html<P, A, F>(path: P, init: A, mut reducer: F) -> quick_xml::Result<A>
+pub fn fold_html<P, A, F>(path: P, init: A, reducer: F) -> quick_xml::Result<A>
 where
     P: AsRef<Path>,
     F: for<'e> FnMut(A, MessageEvent<'e>) -> EventResult<A>,
@@ -30,15 +30,7 @@ where
     let mut reader = Reader::from_file(path)?;
     reader.check_end_names(false);
 
-    fold_with_reader(reader, init, |acc, event| match event {
-        MessageEvent::BodyExtracted(mut body) if !body.is_empty() => {
-            if body.contains('[') {
-                body = USER_MENTION_RE.replace_all(&body, "$name").into_owned();
-            }
-            reducer(acc, MessageEvent::BodyExtracted(body))
-        }
-        _ => reducer(acc, event),
-    })
+    fold_with_reader(reader, init, reducer)
 }
 
 #[derive(Debug, PartialEq)]
@@ -52,7 +44,7 @@ enum ParseState {
     MessageShortNameExtracted,
     MessageDateStart,
     MessageDateExtracted,
-    MessageBodyStart(String),
+    MessageBodyStart,
     MessageBodyExtracted,
     MessageAttachments(u32),
     MessageAttachmentsExtracted,
@@ -81,9 +73,8 @@ where
     }
 }
 
-macro_rules! raise_event_and_advance_state {
-    ($state: ident, $event: expr, $next_state: expr) => {
-        $state.advance($next_state);
+macro_rules! msg_event {
+    ($state: ident, $event: expr) => {
         match $state.skip_level {
             Some(max_level) if $state.msg_level > max_level => (),
             Some(_) if $state.at != ParseState::MessageStart => (),
@@ -126,11 +117,8 @@ where
                 | ParseState::MessageAttachmentsExtracted
                     if e.name() == b"div" && class_eq(&mut e.attributes(), b"msg_item") =>
                 {
-                    raise_event_and_advance_state!(
-                        state,
-                        MessageEvent::Start(state.msg_level),
-                        ParseState::MessageStart
-                    );
+                    state.advance(ParseState::MessageStart);
+                    msg_event!(state, MessageEvent::Start(state.msg_level));
                 }
                 ParseState::MessageStart if e.name() == b"b" => {
                     state.advance(ParseState::MessageFullNameStart);
@@ -141,13 +129,13 @@ where
                 ParseState::MessageDateExtracted
                     if e.name() == b"div" && class_eq(&mut e.attributes(), b"msg_body") =>
                 {
-                    state.advance(ParseState::MessageBodyStart(String::new()));
+                    state.advance(ParseState::MessageBodyStart);
                 }
-                ParseState::MessageBodyStart(ref mut body)
+                ParseState::MessageBodyStart
                     if e.name() == b"img" && class_eq(&mut e.attributes(), b"emoji") =>
                 {
                     if let Some(alt) = get_attr(&mut e.attributes(), b"alt") {
-                        body.push_str(reader.decode(&alt)?)
+                        msg_event!(state, MessageEvent::BodyPartExtracted(reader.decode(&alt)?));
                     }
                 }
                 ParseState::MessageDateExtracted
@@ -187,40 +175,43 @@ where
             },
             Ok(Event::Text(e)) => match state.at {
                 ParseState::MessageFullNameStart => {
-                    let full_name = reader.decode(e.escaped())?;
-                    raise_event_and_advance_state!(
+                    state.advance(ParseState::MessageFullNameExtracted);
+                    msg_event!(
                         state,
-                        MessageEvent::FullNameExtracted(full_name),
-                        ParseState::MessageFullNameExtracted
+                        MessageEvent::FullNameExtracted(reader.decode(e.escaped())?)
                     );
                 }
                 ParseState::MessageShortNameStart => {
-                    let short_name = reader.decode(e.escaped())?;
-                    raise_event_and_advance_state!(
+                    state.advance(ParseState::MessageShortNameExtracted);
+                    msg_event!(
                         state,
-                        MessageEvent::ShortNameExtracted(&short_name[1..]), // skip the leading @
-                        ParseState::MessageShortNameExtracted
+                        MessageEvent::ShortNameExtracted(&reader.decode(e.escaped())?[1..]) // skip the leading @
                     );
                 }
                 ParseState::MessageDateStart => {
                     let maybe_date = e.escaped().trim();
                     if !maybe_date.is_empty() {
-                        let date = reader.decode(maybe_date)?;
-                        raise_event_and_advance_state!(
+                        state.advance(ParseState::MessageDateExtracted);
+                        msg_event!(
                             state,
-                            MessageEvent::DateExtracted(date),
-                            ParseState::MessageDateExtracted
+                            MessageEvent::DateExtracted(reader.decode(maybe_date)?)
                         );
                     }
                 }
-                ParseState::MessageBodyStart(ref mut body) => {
-                    body.push_str(reader.decode(e.escaped())?)
+                ParseState::MessageBodyStart => {
+                    let text = reader.decode(e.escaped())?;
+                    if text.contains('[') {
+                        let re_text = USER_MENTION_RE.replace_all(text, "$name");
+                        msg_event!(state, MessageEvent::BodyPartExtracted(&re_text));
+                    } else if !text.is_empty() {
+                        msg_event!(state, MessageEvent::BodyPartExtracted(&text));
+                    }
                 }
                 _ => (),
             },
             Ok(Event::Empty(ref e)) => match state.at {
-                ParseState::MessageBodyStart(ref mut body) if e.name() == b"br" => {
-                    body.push_str("\n")
+                ParseState::MessageBodyStart if e.name() == b"br" => {
+                    msg_event!(state, MessageEvent::BodyPartExtracted("\n"));
                 }
                 _ => (),
             },
@@ -228,15 +219,9 @@ where
                 ParseState::MessageShortNameExtracted => {
                     state.advance(ParseState::MessageDateStart)
                 }
-                ParseState::MessageBodyStart(ref body) if e.name() == b"div" => {
-                    let text = body.clone();
-                    raise_event_and_advance_state!(
-                        state,
-                        MessageEvent::BodyExtracted(text),
-                        ParseState::MessageBodyExtracted
-                    );
-                }
-                ParseState::MessageChatActionStart if e.name() == b"div" => {
+                ParseState::MessageBodyStart | ParseState::MessageChatActionStart
+                    if e.name() == b"div" =>
+                {
                     state.advance(ParseState::MessageBodyExtracted);
                 }
                 ParseState::MessageAttachments(nesting) if e.name() == b"div" => {
