@@ -21,3 +21,16 @@ cargo run --release --example cli -- --help
 ## API Example
 
 See `examples/cli.rs`.
+
+## Changelog
+
+### 0.2.0
+
+* Forwarded messages are now correctly parsed
+* The current nesting level is reported for each message:
+this can be used to reconstruct forwarded message chains or skip forwarded messages altogether
+* Minor performance improvements
+
+### 0.1.0
+
+Initial release
