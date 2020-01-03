@@ -41,7 +41,7 @@ where
     })
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 enum ParseState {
     Prelude,
     NoMessage,
@@ -54,7 +54,9 @@ enum ParseState {
     MessageDateExtracted,
     MessageBodyStart(String),
     MessageBodyExtracted,
-    MessageAttachmentsStart,
+    MessageAttachments(u32),
+    MessageAttachmentsExtracted,
+    MessageForwardedStart,
 }
 
 struct ParseStateHolder<A, F>
@@ -63,27 +65,33 @@ where
 {
     at: ParseState,
     msg_level: u32,
-    attachment_div_level: u32,
+    fwd_closed: bool,
+    skip_level: Option<u32>,
     acc: A,
     reducer: F,
 }
 
 macro_rules! raise_event_and_advance_state {
     ($state: ident, $event: expr, $next_state: expr) => {
-        match ($state.reducer)($state.acc, $event) {
-            EventResult::Consumed(next_acc) => {
-                $state.acc = next_acc;
-                $state.at = $next_state;
-            }
-            EventResult::SkipMessage(next_acc) => {
-                $state.acc = next_acc;
-                $state.at = ParseState::NoMessage;
-            }
+        $state.at = $next_state;
+        match $state.skip_level {
+            Some(max_level) if $state.msg_level > max_level => (),
+            Some(_) if $state.at != ParseState::MessageStart => (),
+            _ => match ($state.reducer)($state.acc, $event) {
+                EventResult::Consumed(next_acc) => {
+                    $state.acc = next_acc;
+                    $state.skip_level = None;
+                }
+                EventResult::SkipMessage(next_acc) => {
+                    $state.acc = next_acc;
+                    $state.skip_level = Some($state.msg_level);
+                }
+            },
         }
     };
 }
 
-fn fold_with_reader<B, A, F>(mut reader: Reader<B>, init: A, mut reducer: F) -> quick_xml::Result<A>
+fn fold_with_reader<B, A, F>(mut reader: Reader<B>, init: A, reducer: F) -> quick_xml::Result<A>
 where
     B: std::io::BufRead,
     F: for<'e> FnMut(A, MessageEvent<'e>) -> EventResult<A>,
@@ -92,7 +100,8 @@ where
     let mut state = ParseStateHolder {
         at: ParseState::Prelude,
         msg_level: 0,
-        attachment_div_level: 0,
+        fwd_closed: false,
+        skip_level: None,
         acc: init,
         reducer,
     };
@@ -102,7 +111,9 @@ where
             Ok(Event::Start(ref e)) => match state.at {
                 // There's an <hr> tag right before the first msg_item
                 ParseState::Prelude if e.name() == b"hr" => state.at = ParseState::NoMessage,
-                ParseState::NoMessage | ParseState::MessageBodyExtracted
+                ParseState::NoMessage
+                | ParseState::MessageBodyExtracted
+                | ParseState::MessageAttachmentsExtracted
                     if e.name() == b"div" && class_eq(&mut e.attributes(), b"msg_item") =>
                 {
                     raise_event_and_advance_state!(
@@ -129,18 +140,30 @@ where
                         body.push_str(reader.decode(&alt)?)
                     }
                 }
-                ParseState::MessageDateExtracted | ParseState::MessageBodyExtracted
-                    if e.name() == b"div" && class_eq(&mut e.attributes(), b"attacments") =>
-                {
-                    state.at = ParseState::MessageAttachmentsStart
-                }
                 ParseState::MessageDateExtracted
                 | ParseState::MessageBodyExtracted
-                | ParseState::NoMessage
+                | ParseState::MessageAttachmentsExtracted
+                    if e.name() == b"div" =>
+                {
+                    let mut attrs = e.attributes();
+                    match get_attr(&mut attrs, b"class") {
+                        Some(cls) if cls.as_ref() == b"attacments" => {
+                            state.at = ParseState::MessageAttachments(0);
+                        }
+                        Some(cls) if cls.as_ref() == b"att_head" => {
+                            state.at = ParseState::MessageForwardedStart;
+                        }
+                        _ => (),
+                    }
+                }
+                ParseState::MessageAttachments(nesting) if e.name() == b"div" => {
+                    state.at = ParseState::MessageAttachments(nesting + 1)
+                }
+                ParseState::MessageForwardedStart
                     if e.name() == b"div" && class_eq(&mut e.attributes(), b"fwd") =>
                 {
                     state.msg_level += 1;
-                    state.attachment_div_level += 2; // div class="att_head" + div class="fwd"
+                    state.fwd_closed = false;
                     state.at = ParseState::NoMessage;
                 }
                 _ => {}
@@ -187,21 +210,29 @@ where
             Ok(Event::End(ref e)) => match state.at {
                 ParseState::MessageShortNameExtracted => state.at = ParseState::MessageDateStart,
                 ParseState::MessageBodyStart(body) if e.name() == b"div" => {
-                    state.attachment_div_level += 1; // msg_body's closing tag
                     raise_event_and_advance_state!(
                         state,
                         MessageEvent::BodyExtracted(body),
                         ParseState::MessageBodyExtracted
                     );
                 }
-                ParseState::MessageAttachmentsStart if e.name() == b"div" => {
+                ParseState::MessageAttachments(nesting) if e.name() == b"div" => {
+                    state.at = if nesting > 0 {
+                        ParseState::MessageAttachments(nesting - 1)
+                    } else {
+                        ParseState::MessageAttachmentsExtracted
+                    };
+                }
+                ParseState::MessageBodyExtracted if e.name() == b"div" => {
                     state.at = ParseState::NoMessage;
                 }
-                ParseState::MessageBodyExtracted | ParseState::NoMessage if e.name() == b"div" => {
-                    if state.attachment_div_level > 0 {
-                        state.attachment_div_level -= 1;
-                        if state.attachment_div_level == 0 && state.msg_level > 0 {
+                ParseState::NoMessage if e.name() == b"div" => {
+                    if state.msg_level > 0 {
+                        if !state.fwd_closed {
+                            state.fwd_closed = true;
+                        } else {
                             state.msg_level -= 1;
+                            state.fwd_closed = false;
                         }
                     }
                 }

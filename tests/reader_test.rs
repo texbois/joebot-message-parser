@@ -110,7 +110,7 @@ fn it_parses_forwarded_messages_with_arbitrary_nesting() {
         "ShortNameExtracted(\"denko\")",
         "DateExtracted(\"2018.01.21 20:48:10\")",
         "BodyExtracted(\"I\\\'ll do it\")",
-        "Start(2)",
+        "Start(1)",
         "FullNameExtracted(\"Denko\")",
         "ShortNameExtracted(\"denko\")",
         "DateExtracted(\"2019.01.02 07:03:06\")",
@@ -122,7 +122,7 @@ fn it_parses_forwarded_messages_with_arbitrary_nesting() {
 fn it_skips_forwarded_messages() {
     let events = read_events_skipping("messages_forwarded.html", |e| match e {
         MessageEvent::DateExtracted("2018.01.21 20:48:19") => false,
-        _ => true
+        _ => true,
     });
     assert_events!(
         &events,
@@ -145,10 +145,29 @@ fn it_skips_forwarded_messages() {
         "FullNameExtracted(\"Sota\")",
         "ShortNameExtracted(\"sota\")",
         "DateExtracted(\"2018.01.21 20:48:19\")",
-        "Start(2)",
+        "Start(1)",
         "FullNameExtracted(\"Denko\")",
         "ShortNameExtracted(\"denko\")",
         "DateExtracted(\"2019.01.02 07:03:06\")",
         "BodyExtracted(\"tomorrow maybe\")"
+    );
+}
+
+#[test]
+fn it_skips_forwarded_messages_2() {
+    let events = read_events_skipping("messages_forwarded.html", |e| match e {
+        MessageEvent::Start(1) => false,
+        _ => true,
+    });
+    assert_events!(
+        &events,
+        "Start(0)",
+        "FullNameExtracted(\"Denko\")",
+        "ShortNameExtracted(\"denko\")",
+        "DateExtracted(\"2019.01.02 07:03:18\")",
+        "BodyExtracted(\"take it and leave\")",
+        "Start(1)",
+        "Start(1)",
+        "Start(1)"
     );
 }
