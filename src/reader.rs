@@ -115,7 +115,7 @@ where
                 ParseState::NoMessage
                 | ParseState::MessageBodyExtracted
                 | ParseState::MessageAttachmentsExtracted
-                    if e.name() == b"div" && class_eq(&mut e.attributes(), b"msg_item") =>
+                    if e.name() == b"div" && e.attributes_raw().contains_substring(b"\"msg_item\"") =>
                 {
                     state.advance(ParseState::MessageStart);
                     msg_event!(state, MessageEvent::Start(state.msg_level));
@@ -127,19 +127,19 @@ where
                     state.advance(ParseState::MessageShortNameStart);
                 }
                 ParseState::MessageDateExtracted
-                    if e.name() == b"div" && class_eq(&mut e.attributes(), b"msg_body") =>
+                    if e.name() == b"div" && e.attributes_raw().contains_substring(b"\"msg_body\"") =>
                 {
                     state.advance(ParseState::MessageBodyStart);
                 }
                 ParseState::MessageBodyStart
-                    if e.name() == b"img" && class_eq(&mut e.attributes(), b"emoji") =>
+                    if e.name() == b"img" && e.attributes_raw().contains_substring(b"\"emoji\"") =>
                 {
                     if let Some(alt) = get_attr(&mut e.attributes(), b"alt") {
                         msg_event!(state, MessageEvent::BodyPartExtracted(reader.decode(&alt)?));
                     }
                 }
                 ParseState::MessageDateExtracted
-                    if e.name() == b"div" && e.attributes().next().is_none() =>
+                    if e.name() == b"div" && e.attributes_raw().is_empty() =>
                 {
                     state.advance(ParseState::MessageChatActionStart);
                 }
@@ -165,7 +165,7 @@ where
                     state.advance(ParseState::MessageAttachments(nesting + 1))
                 }
                 ParseState::MessageForwardedStart
-                    if e.name() == b"div" && class_eq(&mut e.attributes(), b"fwd") =>
+                    if e.name() == b"div" && e.attributes_raw().contains_substring(b"\"fwd\"") =>
                 {
                     state.msg_level += 1;
                     state.fwd_closed = false;
@@ -257,13 +257,6 @@ where
     Ok(state.acc)
 }
 
-fn class_eq(attrs: &mut Attributes, cmp: &[u8]) -> bool {
-    attrs.with_checks(false).any(|ar| match ar {
-        Ok(a) => a.key == b"class" && a.value.as_ref() == cmp,
-        _ => false,
-    })
-}
-
 fn get_attr<'a>(attrs: &'a mut Attributes, key: &[u8]) -> Option<Cow<'a, [u8]>> {
     attrs.with_checks(false).find_map(|ar| match ar {
         Ok(a) if a.key == key => Some(a.value),
@@ -274,6 +267,7 @@ fn get_attr<'a>(attrs: &'a mut Attributes, key: &[u8]) -> Option<Cow<'a, [u8]>> 
 // Based on https://stackoverflow.com/a/31102496/1726690
 trait RawText {
     fn trim(&self) -> &Self;
+    fn contains_substring(&self, sub: &[u8]) -> bool;
 }
 
 impl RawText for [u8] {
@@ -288,5 +282,22 @@ impl RawText for [u8] {
         } else {
             &[]
         }
+    }
+
+    fn contains_substring(&self, sub: &[u8]) -> bool {
+        let mut s = self;
+        while !s.is_empty() {
+            if let Some(pos) = s.iter().position(|&c| c == sub[0]) {
+                let endpos = pos + sub.len();
+                if endpos > s.len() {
+                    return false;
+                }
+                if &s[pos..pos + sub.len()] == sub {
+                    return true;
+                }
+                s = &s[pos + 1..];
+            }
+        }
+        false
     }
 }

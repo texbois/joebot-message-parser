@@ -93,8 +93,8 @@ dependencies = [
 
 [[package]]
 name = "quick-xml"
-version = "0.17.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
+version = "0.17.2"
+source = "git+https://github.com/timlathy/quick-xml#eff508ccd3e3bf7f771475753907e76385cd4955"
 dependencies = [
  "memchr 2.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
@@ -168,7 +168,7 @@ dependencies = [
  "chrono 0.4.10 (registry+https://github.com/rust-lang/crates.io-index)",
  "clap 2.33.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "lazy_static 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "quick-xml 0.17.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "quick-xml 0.17.2 (git+https://github.com/timlathy/quick-xml)",
  "regex 1.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
@@ -204,7 +204,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 "checksum memchr 2.2.1 (registry+https://github.com/rust-lang/crates.io-index)" = "88579771288728879b57485cc7d6b07d648c9f0141eb955f8ab7f9d45394468e"
 "checksum num-integer 0.1.41 (registry+https://github.com/rust-lang/crates.io-index)" = "b85e541ef8255f6cf42bbfe4ef361305c6c135d10919ecc26126c4e5ae94bc09"
 "checksum num-traits 0.2.10 (registry+https://github.com/rust-lang/crates.io-index)" = "d4c81ffc11c212fa327657cb19dd85eb7419e163b5b076bede2bdb5c974c07e4"
-"checksum quick-xml 0.17.0 (registry+https://github.com/rust-lang/crates.io-index)" = "aafcdba8c8d71275493d966ef052a88726ac8590c15a09968b32158205c672ef"
+"checksum quick-xml 0.17.2 (git+https://github.com/timlathy/quick-xml)" = "<none>"
 "checksum redox_syscall 0.1.56 (registry+https://github.com/rust-lang/crates.io-index)" = "2439c63f3f6139d1b57529d16bc3b8bb855230c8efcc5d3a896c8bea7c3b1e84"
 "checksum regex 1.3.1 (registry+https://github.com/rust-lang/crates.io-index)" = "dc220bd33bdce8f093101afe22a037b8eb0e5af33592e6a9caafff0d4cb81cbd"
 "checksum regex-syntax 0.6.12 (registry+https://github.com/rust-lang/crates.io-index)" = "11a7e20d1cce64ef2fed88b66d347f88bd9babb82845b2b858f3edbf59a4f716"

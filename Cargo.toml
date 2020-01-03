@@ -10,7 +10,7 @@ license = "CC0-1.0"
 [dependencies]
 regex = "1"
 lazy_static = "1.4.0"
-quick-xml = "0.17"
+quick-xml = { git = "https://github.com/timlathy/quick-xml" }
 chrono = "0.4"
 
 [[example]]
