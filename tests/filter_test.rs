@@ -44,7 +44,7 @@ fn it_filters_by_min_date() {
         "FullNameExtracted(\"Sota\")",
         "ShortNameExtracted(\"sota\")",
         "DateExtracted(\"2018.01.22 10:05:13\")",
-        "BodyPartExtracted(\"W-what do you think? I hope you like it (´･ω･`)\")"
+        "BodyPartExtracted(\"W-what do you think? I hope you like it (´･ω･`) here\\\'s my pixiv to crash the parser https://t.co/aaaaaa&lt;/a&gt\")"
     );
 }
 
@@ -101,7 +101,7 @@ fn it_filters_by_short_name_whitelist() {
         "BodyPartExtracted(\"Hi Denko\")",
         "BodyPartExtracted(\"\\n\")",
         "BodyPartExtracted(\"\\n\")",
-        "BodyPartExtracted(\"I’m drinking jasmine tea right now, thinking about what to have for dinner (´･ω･`)\")",
+        "BodyPartExtracted(\"I’m drinking \\\"jasmine\\\" tea right now, thinking about what to have for dinner (´･ω･`)\")",
         "Start(0)",
         "FullNameExtracted(\"Denko\")",
         "ShortNameExtracted(\"denko\")",
@@ -113,6 +113,6 @@ fn it_filters_by_short_name_whitelist() {
         "FullNameExtracted(\"Sota\")",
         "ShortNameExtracted(\"sota\")",
         "DateExtracted(\"2018.01.22 10:05:13\")",
-        "BodyPartExtracted(\"W-what do you think? I hope you like it (´･ω･`)\")"
+        "BodyPartExtracted(\"W-what do you think? I hope you like it (´･ω･`) here\\\'s my pixiv to crash the parser https://t.co/aaaaaa&lt;/a&gt\")"
     );
 }

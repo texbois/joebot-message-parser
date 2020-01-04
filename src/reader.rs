@@ -191,7 +191,11 @@ where
                     }
                 }
                 MessageBodyStart => {
-                    let text = reader.decode(e.escaped())?;
+                    let unescaped = match e.unescaped() {
+                        Ok(unescp) => unescp,
+                        _ => Cow::from(e.escaped())
+                    };
+                    let text = reader.decode(&unescaped)?;
                     if text.contains('[') {
                         let re_text = USER_MENTION_RE.replace_all(text, "$name");
                         msg_event!(state, BodyPartExtracted(&re_text));
