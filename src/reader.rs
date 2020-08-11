@@ -29,6 +29,7 @@ pub enum MessageAttachmentKind {
     Photo,
     Video,
     Audio,
+    Sticker,
 }
 
 pub enum EventResult<A> {
@@ -176,20 +177,17 @@ where
                     state.advance(MessageForwardedStart)
                 }
                 MessageAttachmentStart if q!(e, b"div", b"att_ico") => {
-                    if let Some(cls) = get_attr(&mut e.attributes(), b"class") {
-                        let kind = if cls.ends_with(b"doc") {
-                            MessageAttachmentKind::Doc
-                        } else if cls.ends_with(b"audio") {
-                            MessageAttachmentKind::Audio
-                        } else if cls.ends_with(b"video") {
-                            MessageAttachmentKind::Video
-                        } else if cls.ends_with(b"photo") {
-                            MessageAttachmentKind::Photo
-                        } else {
-                            panic!("Unknown attachment class {}", std::str::from_utf8(&cls)?);
-                        };
-                        state.advance(MessageAttachmentHeadStart(kind));
-                    }
+                    // Matching the last three symbols of the class only -- why? Just for lulz
+                    let attrs = e.attributes_raw();
+                    let kind = match &attrs[attrs.len() - 4..attrs.len() - 1] {
+                        b"doc" => MessageAttachmentKind::Doc,
+                        b"dio" => MessageAttachmentKind::Audio,
+                        b"deo" => MessageAttachmentKind::Video,
+                        b"oto" => MessageAttachmentKind::Photo,
+                        b"ker" => MessageAttachmentKind::Sticker,
+                        _ => panic!("Unsupported attachment container: {:?}", e),
+                    };
+                    state.advance(MessageAttachmentHeadStart(kind));
                 }
                 MessageAttachmentHeadStart(kind) if q!(e, b"a") => {
                     let mut attrs = e.attributes();

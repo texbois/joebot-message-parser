@@ -74,7 +74,12 @@ fn it_parses_attachments() {
         "ShortNameExtracted(\"sota\")",
         "DateExtracted(\"2018.01.21 13:53:59\")",
         "AttachmentExtracted { kind: Photo, url: \"https://userapi.com/0.jpg\", vk_obj: \"photo0_0\", description: \"(640x800)\" }",
-        "AttachmentExtracted { kind: Photo, url: \"https://userapi.com/1.jpg\", vk_obj: \"photo0_1\", description: \"(515x400)\" }"
+        "AttachmentExtracted { kind: Photo, url: \"https://userapi.com/1.jpg\", vk_obj: \"photo0_1\", description: \"(515x400)\" }",
+        "Start(0)",
+        "FullNameExtracted(\"Sota\")",
+        "ShortNameExtracted(\"sota\")",
+        "DateExtracted(\"2018.01.21 13:53:59\")",
+        "AttachmentExtracted { kind: Sticker, url: \"https://vk.com/sticker/1-162-256b\", vk_obj: \"\", description: \"Sticker #162\" }"
     );
 }
 
