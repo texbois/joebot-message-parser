@@ -24,6 +24,14 @@ See `examples/cli.rs`.
 
 ## Changelog
 
+### 0.3.0
+
+Added new events for reading message attachments:
+* `AttachmentExtracted { kind, url, vk_obj, description }` — raised after extracting a generic attachment
+* `WallPartExtracted` — raised after extracting the text of the wall post from the preceding
+`AttachmentExtracted` event (if `kind == Wall`)
+* `RawAttachmentPartExtracted` — raised after extracting the body of an attachment encoded in JSON, e.g. a _poll_.
+
 ### 0.2.0
 
 * Forwarded messages are now correctly parsed
