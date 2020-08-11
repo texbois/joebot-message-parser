@@ -79,7 +79,13 @@ fn it_parses_attachments() {
         "FullNameExtracted(\"Sota\")",
         "ShortNameExtracted(\"sota\")",
         "DateExtracted(\"2018.01.21 13:53:59\")",
-        "AttachmentExtracted { kind: Sticker, url: \"https://vk.com/sticker/1-162-256b\", vk_obj: \"\", description: \"Sticker #162\" }"
+        "AttachmentExtracted { kind: Sticker, url: \"https://vk.com/sticker/1-162-256b\", vk_obj: \"\", description: \"Sticker #162\" }",
+        "Start(0)",
+        "FullNameExtracted(\"Sota\")",
+        "ShortNameExtracted(\"sota\")",
+        "DateExtracted(\"2018.01.21 13:53:59\")",
+        "BodyPartExtracted(\"wish you were here\")",
+        "AttachmentExtracted { kind: Location, url: \"https://maps.google.ru/maps?q=34.691139132132 135.50335473102\", vk_obj: \"\", description: \"Location: Osaka, Japan\" }"
     );
 }
 

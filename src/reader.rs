@@ -30,6 +30,7 @@ pub enum MessageAttachmentKind {
     Video,
     Audio,
     Sticker,
+    Location
 }
 
 pub enum EventResult<A> {
@@ -177,14 +178,15 @@ where
                     state.advance(MessageForwardedStart)
                 }
                 MessageAttachmentStart if q!(e, b"div", b"att_ico") => {
-                    // Matching the last three symbols of the class only -- why? Just for lulz
+                    // Matching the last four symbols of the class only -- why? Just for lulz
                     let attrs = e.attributes_raw();
-                    let kind = match &attrs[attrs.len() - 4..attrs.len() - 1] {
-                        b"doc" => MessageAttachmentKind::Doc,
-                        b"dio" => MessageAttachmentKind::Audio,
-                        b"deo" => MessageAttachmentKind::Video,
-                        b"oto" => MessageAttachmentKind::Photo,
-                        b"ker" => MessageAttachmentKind::Sticker,
+                    let kind = match &attrs[attrs.len() - 5..attrs.len() - 1] {
+                        b"_doc" => MessageAttachmentKind::Doc,
+                        b"udio" => MessageAttachmentKind::Audio,
+                        b"ideo" => MessageAttachmentKind::Video,
+                        b"hoto" => MessageAttachmentKind::Photo,
+                        b"cker" => MessageAttachmentKind::Sticker,
+                        b"_geo" => MessageAttachmentKind::Location,
                         _ => panic!("Unsupported attachment container: {:?}", e),
                     };
                     state.advance(MessageAttachmentHeadStart(kind));
