@@ -49,18 +49,49 @@ fn it_parses_emoji() {
 }
 
 #[test]
+fn it_parses_attachments() {
+    let events = read_events("messages_attachments.html");
+
+    assert_events!(
+        &events,
+        "Start(0)",
+        "FullNameExtracted(\"Sota\")",
+        "ShortNameExtracted(\"sota\")",
+        "DateExtracted(\"2018.01.21 13:53:59\")",
+        "AttachmentExtracted { kind: Video, url: \"http://vk.com/video00000\", vk_obj: \"video_00000\", description: \"Rick Astley - Never Gonna Give You Up (Video) (3:33)\" }",
+        "Start(0)",
+        "FullNameExtracted(\"Sota\")",
+        "ShortNameExtracted(\"sota\")",
+        "DateExtracted(\"2018.01.21 13:53:59\")",
+        "AttachmentExtracted { kind: Doc, url: \"https://vk.com/doc0_0?hash=aaaaa\", vk_obj: \"\", description: \"voice_message.webm\" }",
+        "Start(0)",
+        "FullNameExtracted(\"Sota\")",
+        "ShortNameExtracted(\"sota\")",
+        "DateExtracted(\"2018.01.21 13:53:59\")",
+        "AttachmentExtracted { kind: Audio, url: \"https://useraudio\", vk_obj: \"audio2000015592_456243043\", description: \"Johnny Cash - (Ghost) Riders In the Sky (3:46)\" }",
+        "Start(0)",
+        "FullNameExtracted(\"Sota\")",
+        "ShortNameExtracted(\"sota\")",
+        "DateExtracted(\"2018.01.21 13:53:59\")",
+        "AttachmentExtracted { kind: Photo, url: \"https://userapi.com/0.jpg\", vk_obj: \"photo0_0\", description: \"(640x800)\" }",
+        "AttachmentExtracted { kind: Photo, url: \"https://userapi.com/1.jpg\", vk_obj: \"photo0_1\", description: \"(515x400)\" }"
+    );
+}
+
+#[test]
 fn it_parses_attachments_without_body() {
     let events = read_events("messages.html");
     assert_events!(
-        &events[19..24],
+        &events[19..25],
         "Start(0)",
         "FullNameExtracted(\"Sota\")",
         "ShortNameExtracted(\"sota\")",
         "DateExtracted(\"2018.01.22 10:03:04\")",
+        "AttachmentExtracted { kind: Photo, url: \"photo\", vk_obj: \"photo420_13\", description: \"(420x6)\" }",
         "Start(0)"
     );
     assert_events!(
-        &events[23..],
+        &events[24..],
         "Start(0)",
         "FullNameExtracted(\"Sota\")",
         "ShortNameExtracted(\"sota\")",
@@ -79,6 +110,7 @@ fn it_parses_forwarded_messages_with_arbitrary_nesting() {
         "ShortNameExtracted(\"denko\")",
         "DateExtracted(\"2019.01.02 07:03:18\")",
         "BodyPartExtracted(\"take it and leave\")",
+        "AttachmentExtracted { kind: Photo, url: \"https://sun9-64.userapi.com/c/v/h/m.jpg\", vk_obj: \"photo1\", description: \"(400x400)\" }",
         "Start(1)",
         "FullNameExtracted(\"Sota\")",
         "ShortNameExtracted(\"sota\")",
@@ -125,6 +157,7 @@ fn it_skips_forwarded_messages() {
         "ShortNameExtracted(\"denko\")",
         "DateExtracted(\"2019.01.02 07:03:18\")",
         "BodyPartExtracted(\"take it and leave\")",
+        "AttachmentExtracted { kind: Photo, url: \"https://sun9-64.userapi.com/c/v/h/m.jpg\", vk_obj: \"photo1\", description: \"(400x400)\" }",
         "Start(1)",
         "FullNameExtracted(\"Sota\")",
         "ShortNameExtracted(\"sota\")",
@@ -160,6 +193,7 @@ fn it_skips_forwarded_messages_2() {
         "ShortNameExtracted(\"denko\")",
         "DateExtracted(\"2019.01.02 07:03:18\")",
         "BodyPartExtracted(\"take it and leave\")",
+        "AttachmentExtracted { kind: Photo, url: \"https://sun9-64.userapi.com/c/v/h/m.jpg\", vk_obj: \"photo1\", description: \"(400x400)\" }",
         "Start(1)",
         "Start(1)",
         "Start(1)"
@@ -176,6 +210,7 @@ fn it_parses_forwarded_messages_with_attachments() {
         "FullNameExtracted(\"Denko\")",
         "ShortNameExtracted(\"denko\")",
         "DateExtracted(\"2018.01.21 19:00:55\")",
+        "AttachmentExtracted { kind: Photo, url: \"https://photo.jpg\", vk_obj: \"photo1\", description: \"(960x793)\" }",
         "Start(0)",
         "FullNameExtracted(\"Denko\")",
         "ShortNameExtracted(\"denko\")",
@@ -191,6 +226,7 @@ fn it_parses_forwarded_messages_with_attachments() {
         "ShortNameExtracted(\"denko\")",
         "DateExtracted(\"2018.01.21 18:58:09\")",
         "BodyPartExtracted(\" \")",
+        "AttachmentExtracted { kind: Photo, url: \"https://photo_old.jpg\", vk_obj: \"photo0\", description: \"(597x475)\" }",
         "Start(0)",
         "FullNameExtracted(\"Sota\")",
         "ShortNameExtracted(\"sota\")",

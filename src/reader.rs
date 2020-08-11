@@ -15,6 +15,20 @@ pub enum MessageEvent<'a> {
     ShortNameExtracted(&'a str),
     DateExtracted(&'a str),
     BodyPartExtracted(&'a str),
+    AttachmentExtracted {
+        kind: MessageAttachmentKind,
+        url: &'a str,
+        vk_obj: &'a str,
+        description: &'a str,
+    },
+}
+
+#[derive(Debug, PartialEq, Copy, Clone)]
+pub enum MessageAttachmentKind {
+    Doc,
+    Photo,
+    Video,
+    Audio,
 }
 
 pub enum EventResult<A> {
@@ -46,8 +60,11 @@ enum ParseState {
     MessageDateExtracted,
     MessageBodyStart,
     MessageBodyExtracted,
-    MessageAttachments(u32),
-    MessageAttachmentsExtracted,
+    MessageAttachmentsPrelude,
+    MessageAttachmentStart,
+    MessageAttachmentHeadStart(MessageAttachmentKind),
+    MessageAttachmentBodyStart(MessageAttachmentKind, String),
+    MessageAttachmentEpilogue,
     MessageForwardedStart,
     MessageChatActionStart,
 }
@@ -124,9 +141,7 @@ where
             Ok(Event::Start(ref e)) => match state.at {
                 // There's an <hr> tag right before the first msg_item
                 Prelude if q!(e, b"hr") => state.advance(NoMessage),
-                NoMessage | MessageBodyExtracted | MessageAttachmentsExtracted
-                    if q!(e, b"div", b"\"msg_item\"") =>
-                {
+                NoMessage | MessageBodyExtracted if q!(e, b"div", b"\"msg_item\"") => {
                     state.advance(MessageStart);
                     msg_event!(state, Start(state.msg_level));
                 }
@@ -147,22 +162,40 @@ where
                 MessageDateExtracted if q!(e, b"div") && e.attributes_raw().is_empty() => {
                     state.advance(MessageChatActionStart);
                 }
-                MessageDateExtracted | MessageBodyExtracted | MessageAttachmentsExtracted
-                    if q!(e, b"div") =>
+                MessageDateExtracted | MessageBodyExtracted if q!(e, b"div", b"\"attacments\"") => {
+                    state.advance(MessageAttachmentsPrelude)
+                }
+                MessageAttachmentsPrelude | MessageBodyExtracted
+                    if q!(e, b"div", b"\"attacment\"") =>
                 {
-                    let mut attrs = e.attributes();
-                    match get_attr(&mut attrs, b"class") {
-                        Some(cls) if &*cls == b"attacments" || &*cls == b"attacment" => {
-                            state.advance(MessageAttachments(0));
-                        }
-                        Some(cls) if &*cls == b"att_head" => {
-                            state.advance(MessageForwardedStart);
-                        }
-                        _ => (),
+                    state.advance(MessageAttachmentStart)
+                }
+                MessageAttachmentsPrelude | MessageBodyExtracted
+                    if q!(e, b"div", b"\"att_head\"") =>
+                {
+                    state.advance(MessageForwardedStart)
+                }
+                MessageAttachmentStart if q!(e, b"div", b"att_ico") => {
+                    if let Some(cls) = get_attr(&mut e.attributes(), b"class") {
+                        let kind = if cls.ends_with(b"doc") {
+                            MessageAttachmentKind::Doc
+                        } else if cls.ends_with(b"audio") {
+                            MessageAttachmentKind::Audio
+                        } else if cls.ends_with(b"video") {
+                            MessageAttachmentKind::Video
+                        } else if cls.ends_with(b"photo") {
+                            MessageAttachmentKind::Photo
+                        } else {
+                            panic!("Unknown attachment class {}", std::str::from_utf8(&cls)?);
+                        };
+                        state.advance(MessageAttachmentHeadStart(kind));
                     }
                 }
-                MessageAttachments(nesting) if q!(e, b"div") => {
-                    state.advance(MessageAttachments(nesting + 1))
+                MessageAttachmentHeadStart(kind) if q!(e, b"a") => {
+                    let mut attrs = e.attributes();
+                    let href = get_attr(&mut attrs, b"href").unwrap_or(Cow::Borrowed(&[]));
+                    let src = reader.decode(&href)?.to_owned();
+                    state.advance(MessageAttachmentBodyStart(kind, src));
                 }
                 MessageForwardedStart if q!(e, b"div", b"\"fwd\"") => {
                     state.msg_level += 1;
@@ -193,7 +226,7 @@ where
                 MessageBodyStart => {
                     let unescaped = match e.unescaped() {
                         Ok(unescp) => unescp,
-                        _ => Cow::from(e.escaped())
+                        _ => Cow::from(e.escaped()),
                     };
                     let text = reader.decode(&unescaped)?;
                     if text.contains('[') {
@@ -202,6 +235,31 @@ where
                     } else if !text.is_empty() {
                         msg_event!(state, BodyPartExtracted(&text));
                     }
+                }
+                MessageAttachmentBodyStart(kind, ref url) => {
+                    let unescaped = match e.unescaped() {
+                        Ok(unescp) => unescp,
+                        _ => Cow::from(e.escaped()),
+                    };
+                    let info = reader.decode(&unescaped)?.trim();
+                    let (vk_obj, description) = if info.starts_with('[') {
+                        let mut info_split = info[1..].splitn(2, ']');
+                        let vk_obj = info_split.next().unwrap_or("");
+                        let description = info_split.next().unwrap_or("").trim();
+                        (vk_obj, description)
+                    } else {
+                        ("", info)
+                    };
+                    msg_event!(
+                        state,
+                        AttachmentExtracted {
+                            kind,
+                            url,
+                            vk_obj,
+                            description
+                        }
+                    );
+                    state.advance(MessageAttachmentEpilogue);
                 }
                 _ => (),
             },
@@ -216,14 +274,10 @@ where
                 MessageBodyStart | MessageChatActionStart if q!(e, b"div") => {
                     state.advance(MessageBodyExtracted);
                 }
-                MessageAttachments(nesting) if q!(e, b"div") => {
-                    state.advance(if nesting > 0 {
-                        MessageAttachments(nesting - 1)
-                    } else {
-                        MessageAttachmentsExtracted
-                    });
+                MessageAttachmentEpilogue if q!(e, b"div") => {
+                    state.advance(MessageBodyExtracted);
                 }
-                MessageAttachmentsExtracted | MessageBodyExtracted if q!(e, b"div") => {
+                MessageBodyExtracted if q!(e, b"div") => {
                     state.advance(NoMessage);
                 }
                 NoMessage if q!(e, b"div") => {
