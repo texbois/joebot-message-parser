@@ -15,6 +15,8 @@ pub enum MessageEvent<'a> {
     ShortNameExtracted(&'a str),
     DateExtracted(&'a str),
     BodyPartExtracted(&'a str),
+    WallPartExtracted(&'a str),
+    RawAttachmentPartExtracted(&'a str),
     AttachmentExtracted {
         kind: MessageAttachmentKind,
         url: &'a str,
@@ -30,7 +32,8 @@ pub enum MessageAttachmentKind {
     Video,
     Audio,
     Sticker,
-    Location
+    Location,
+    Wall,
 }
 
 pub enum EventResult<A> {
@@ -66,6 +69,8 @@ enum ParseState {
     MessageAttachmentStart,
     MessageAttachmentHeadStart(MessageAttachmentKind),
     MessageAttachmentBodyStart(MessageAttachmentKind, String),
+    MessageAttachmentWallBodyStart,
+    MessageAttachmentRawBodyStart,
     MessageAttachmentEpilogue,
     MessageForwardedStart,
     MessageChatActionStart,
@@ -187,15 +192,22 @@ where
                         b"hoto" => MessageAttachmentKind::Photo,
                         b"cker" => MessageAttachmentKind::Sticker,
                         b"_geo" => MessageAttachmentKind::Location,
+                        b"wall" => MessageAttachmentKind::Wall,
                         _ => panic!("Unsupported attachment container: {:?}", e),
                     };
                     state.advance(MessageAttachmentHeadStart(kind));
+                }
+                MessageAttachmentStart if q!(e, b"pre") => {
+                    state.advance(MessageAttachmentRawBodyStart);
                 }
                 MessageAttachmentHeadStart(kind) if q!(e, b"a") => {
                     let mut attrs = e.attributes();
                     let href = get_attr(&mut attrs, b"href").unwrap_or(Cow::Borrowed(&[]));
                     let src = reader.decode(&href)?.to_owned();
                     state.advance(MessageAttachmentBodyStart(kind, src));
+                }
+                MessageAttachmentEpilogue if q!(e, b"div", b"\"att_wall_text\"") => {
+                    state.advance(MessageAttachmentWallBodyStart);
                 }
                 MessageForwardedStart if q!(e, b"div", b"\"fwd\"") => {
                     state.msg_level += 1;
@@ -224,10 +236,7 @@ where
                     }
                 }
                 MessageBodyStart => {
-                    let unescaped = match e.unescaped() {
-                        Ok(unescp) => unescp,
-                        _ => Cow::from(e.escaped()),
-                    };
+                    let unescaped = &e.unescaped().unwrap_or(Cow::from(e.escaped()));
                     let text = reader.decode(&unescaped)?;
                     if text.contains('[') {
                         let re_text = USER_MENTION_RE.replace_all(text, "$name");
@@ -237,10 +246,7 @@ where
                     }
                 }
                 MessageAttachmentBodyStart(kind, ref url) => {
-                    let unescaped = match e.unescaped() {
-                        Ok(unescp) => unescp,
-                        _ => Cow::from(e.escaped()),
-                    };
+                    let unescaped = &e.unescaped().unwrap_or(Cow::from(e.escaped()));
                     let info = reader.decode(&unescaped)?.trim();
                     let (vk_obj, description) = if info.starts_with('[') {
                         let mut info_split = info[1..].splitn(2, ']');
@@ -261,6 +267,16 @@ where
                     );
                     state.advance(MessageAttachmentEpilogue);
                 }
+                MessageAttachmentRawBodyStart => {
+                    let unescaped = &e.unescaped().unwrap_or(Cow::from(e.escaped()));
+                    let data = reader.decode(&unescaped)?;
+                    msg_event!(state, RawAttachmentPartExtracted(&data));
+                }
+                MessageAttachmentWallBodyStart => {
+                    let unescaped = &e.unescaped().unwrap_or(Cow::from(e.escaped()));
+                    let text = reader.decode(&unescaped)?;
+                    msg_event!(state, WallPartExtracted(&text));
+                }
                 _ => (),
             },
             Ok(Event::Empty(ref e)) => match state.at {
@@ -271,11 +287,16 @@ where
             },
             Ok(Event::End(ref e)) => match state.at {
                 MessageShortNameExtracted => state.advance(MessageDateStart),
-                MessageBodyStart | MessageChatActionStart if q!(e, b"div") => {
+                MessageBodyStart
+                | MessageAttachmentWallBodyStart
+                | MessageChatActionStart
+                | MessageAttachmentEpilogue
+                    if q!(e, b"div") =>
+                {
                     state.advance(MessageBodyExtracted);
                 }
-                MessageAttachmentEpilogue if q!(e, b"div") => {
-                    state.advance(MessageBodyExtracted);
+                MessageAttachmentRawBodyStart if q!(e, b"pre") => {
+                    state.advance(MessageBodyExtracted)
                 }
                 MessageBodyExtracted if q!(e, b"div") => {
                     state.advance(NoMessage);

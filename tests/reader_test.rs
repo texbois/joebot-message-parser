@@ -84,6 +84,14 @@ fn it_parses_attachments() {
         "FullNameExtracted(\"Sota\")",
         "ShortNameExtracted(\"sota\")",
         "DateExtracted(\"2018.01.21 13:53:59\")",
+        "AttachmentExtracted { kind: Wall, url: \"http://vk.com/wall-0_0\", vk_obj: \"wall-0_0\", description: \"\" }",
+        "WallPartExtracted(\"Wall post text\")",
+        "AttachmentExtracted { kind: Photo, url: \"https://userapi.com/wall0.jpg\", vk_obj: \"photo-0_0\", description: \"(820x1300)\" }",
+        "RawAttachmentPartExtracted(\"{\\r\\n   \\\"type\\\": \\\"poll\\\",\\r\\n   \\\"poll\\\": {\\r\\n   \\\"answers\\\": [\\r\\n      {\\\"id\\\": 0, \\\"rate\\\": 146.0, \\\"text\\\": \\\"DA\\\", \\\"votes\\\": 20},\\r\\n      {\\\"id\\\": 1, \\\"rate\\\": 5.0, \\\"text\\\": \\\"NE\\\", \\\"votes\\\": 80}\\r\\n   ]}\\r\\n}\")",
+        "Start(0)",
+        "FullNameExtracted(\"Sota\")",
+        "ShortNameExtracted(\"sota\")",
+        "DateExtracted(\"2018.01.21 13:53:59\")",
         "BodyPartExtracted(\"wish you were here\")",
         "AttachmentExtracted { kind: Location, url: \"https://maps.google.ru/maps?q=34.691139132132 135.50335473102\", vk_obj: \"\", description: \"Location: Osaka, Japan\" }"
     );
